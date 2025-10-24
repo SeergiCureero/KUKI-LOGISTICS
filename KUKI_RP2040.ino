@@ -109,27 +109,25 @@ void prog(BLEDevice peripheral) {
       memcpy(&valY, bufY, sizeof(float));
       memcpy(&valVel, bufVel, sizeof(float));
 
-       // Imprimir los valores
-      if (valX > threshold) Serial.println("Inclinado hacia atrás");
-        else if (valX < -threshold) Serial.println("Inclinado hacia adelante");
+      valVel = vel;
 
-      if (valY > threshold) Serial.println("Inclinado hacia la derecha");
-        else if (valY < -threshold) Serial.println("Inclinado hacia la izquierda");
+       if (abs(valX) < threshold && abs(valY) < threshold) dir = 'n'; // centro
+        else if (valX > threshold && valY > threshold) dir = 'b';      // arriba-derecha
+        else if (valX > threshold && valY < -threshold) dir = 'h';     // arriba-izquierda
+        else if (valX < -threshold && valY > threshold) dir = 'd';     // abajo-derecha
+        else if (valX < -threshold && valY < -threshold) dir = 'f';    // abajo-izquierda
+        else if (valX > threshold) dir = 'a';                           // arriba
+        else if (valX < -threshold) dir = 'e';                          // abajo
+        else if (valY > threshold) dir = 'c';                           // derecha
+        else if (valY < -threshold) dir = 'g';                          // izquierda  
 
-      if (abs(valX) < threshold && abs(valY) < threshold) Serial.println("Recto");
-
-      Serial.println(valVel);
     }
-    
+
     msg = String(dir) + String(vel);
     Serial1.println(msg);
     Serial.print("Mensaje enviado: ");
     Serial.println(msg);
-
     delay(100);
-  }
-  Serial.println("Peripheral disconnected");
-}
   }
   Serial.println("Peripheral disconnected");
 }
