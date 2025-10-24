@@ -5,7 +5,7 @@ String msg;
 char dir;
 int vel;
 
-bool COMSBLT = false;
+bool COMSBLT = true;
 
 char instrucciones[] = {'a','n','b','n','c','n','d','n','e','n','f','n','g','n','h','n'}; 
 int numeroInstruccion = 0;
@@ -106,7 +106,6 @@ void setup() {
   
   Serial1.begin(9600); // UART1: RX=5, TX=4 
   Serial.begin(9600); // Debug por puerto USB
-  while (!Serial);
   // initialize the BLE hardware
   BLE.begin();
   Serial.println("KUKI");
@@ -158,7 +157,3 @@ void loop() {
     msg = instrucciones[numeroInstruccion] + String(vel);
   }
 }
-
-
-
-
