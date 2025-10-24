@@ -5,7 +5,7 @@ String msg;
 char dir;
 int vel;
 
-bool COMSBLT = true;
+bool COMSBLT = false;
 
 char instrucciones[] = {'a','n','b','n','c','n','d','n','e','n','f','n','g','n','h','n'}; 
 int numeroInstruccion = 0;
@@ -143,9 +143,10 @@ void loop() {
     // peripheral disconnected, start scanning again
     BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
   }
-  else{
+
+  else if (!COMSBLT){
     //automatico, sin comunicacion
-    vel = 50;
+    vel = 100;
     tiempoActual = millis();
 
     if (tiempoActual - tiempoAnterior >= intervalo) {
@@ -154,6 +155,7 @@ void loop() {
         numeroInstruccion += 1;
       }
     }
+    Serial.println("Instruccion numero " + String(numeroInstruccion) + instrucciones[numeroInstruccion]);
     msg = instrucciones[numeroInstruccion] + String(vel);
   }
 }
