@@ -66,9 +66,12 @@ void lectura() {
     X.writeValue(Ax);
     Y.writeValue(Ay);
   }
+
+  int lectura_potenciometro = analogRead(A1);      
+  float PotVel = (float)lectura_potenciometro / 1023.0; // Normalizar a 0.0–1.0
+  PotVel = PotVel * 10.0;    // Ahora normalizado 0–10
+  Serial.print("Velocidad: ");
+  Serial.println(PotVel, 2);
+  Vel.writeValue(PotVel);           
   
 }
-
-
-
-
