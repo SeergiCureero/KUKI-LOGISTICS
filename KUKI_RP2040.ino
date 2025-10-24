@@ -7,6 +7,7 @@ int vel;
 void setup() {
   // Pin GPIO5 com a RX
   // Pin GPIO4 com a TX
+  
   Serial1.begin(9600); // UART1: RX=5, TX=4 
   Serial.begin(9600); // Debug por puerto USB
   while (!Serial);
@@ -17,17 +18,9 @@ void setup() {
   BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
 }
 void loop() {
-    /*
+    
   // Envia mensaje al MEGA
-  Serial1.println("Hola MEGA!");
-  // Si recibe datos del MEGA, los muestra en el PC
-  if (Serial1.available()) {
-    String msg = Serial1.readStringUntil('\n');
-    Serial.print("MEGA dice: ");
-    Serial.println(msg);
-  }
-  delay(1000);
-  */
+  
 
   // check if a peripheral has been discovered
   BLEDevice peripheral = BLE.available();
@@ -111,22 +104,28 @@ void prog(BLEDevice peripheral) {
       vel = (int)valVel;  
 
        if (abs(valX) < threshold && abs(valY) < threshold) dir = 'n'; // centro
-        else if (valX > threshold && valY > threshold) dir = 'b';      // arriba-derecha
-        else if (valX > threshold && valY < -threshold) dir = 'h';     // arriba-izquierda
-        else if (valX < -threshold && valY > threshold) dir = 'd';     // abajo-derecha
-        else if (valX < -threshold && valY < -threshold) dir = 'f';    // abajo-izquierda
+        else if (valX > threshold && valY > threshold) dir = 'h';      // arriba-derecha
+        else if (valX > threshold && valY < -threshold) dir = 'b';     // arriba-izquierda
+        else if (valX < -threshold && valY > threshold) dir = 'f';     // abajo-derecha
+        else if (valX < -threshold && valY < -threshold) dir = 'd';    // abajo-izquierda
         else if (valX > threshold) dir = 'a';                           // arriba
         else if (valX < -threshold) dir = 'e';                          // abajo
-        else if (valY > threshold) dir = 'c';                           // derecha
-        else if (valY < -threshold) dir = 'g';                          // izquierda  
+        else if (valY > threshold) dir = 'g';                           // derecha
+        else if (valY < -threshold) dir = 'c';                          // izquierda  
 
     }
 
+
+    
+  // Si recibe datos del MEGA, los muestra en el PC
+  
     msg = String(dir) + String(vel);
     Serial1.println(msg);
     Serial.print("Mensaje enviado: ");
     Serial.println(msg);
+  
     delay(100);
+
   }
   Serial.println("Peripheral disconnected");
 }
