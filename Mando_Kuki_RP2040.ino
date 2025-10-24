@@ -10,7 +10,6 @@ BLEFloatCharacteristic Y("19B10002-E8F2-537E-4F6C-D104768A1214", BLERead | BLENo
 BLEFloatCharacteristic Vel("19B10004-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
 void setup() {
   Serial.begin(9600);
-  while (!Serial);
   // begin initialization
   if (!BLE.begin()) {
     Serial.println("starting Bluetooth® Low Energy failed!");
@@ -69,9 +68,14 @@ void lectura() {
 
   int lectura_potenciometro = analogRead(A1);      
   float PotVel = (float)lectura_potenciometro / 1023.0; // Normalizar a 0.0–1.0
-  PotVel = PotVel * 10.0;    // Ahora normalizado 0–10
+  PotVel = PotVel * 255.0;    // Ahora normalizado 0–10
   Serial.print("Velocidad: ");
   Serial.println(PotVel, 2);
   Vel.writeValue(PotVel);           
   
 }
+
+
+
+
+
