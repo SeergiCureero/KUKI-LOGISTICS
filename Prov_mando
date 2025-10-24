@@ -1,0 +1,123 @@
+#include <ArduinoBLE.h>
+#include <Arduino_LSM6DSOX.h>
+
+float Ax, Ay, Az;
+int boton_girar_menos_90 = 2;
+int boton_girar_mas_90 = 3;
+bool Switch1;
+bool Switch2;
+
+BLEService S("19B10000-E8F2-537E-4F6C-D104768A1214"); // BLE LED Service
+// BLE LED Switch Characteristic - custom 128-bit UUID, read and writable by central
+BLEFloatCharacteristic X("19B10001-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
+BLEFloatCharacteristic Y("19B10002-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
+BLEFloatCharacteristic Vel("19B10004-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
+BLEByteCharacteristic B1("19B10005-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
+BLEByteCharacteristic B2("19B10006-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(boton_girar_menos_90, INPUT_PULLUP);
+  pinMode(boton_girar_mas_90, INPUT_PULLUP);
+  // begin initialization
+  if (!BLE.begin()) {
+    Serial.println("starting Bluetooth® Low Energy failed!");
+  }
+  if (!IMU.begin()) {
+    Serial.println("Failed to initialize IMU!");
+
+    while (1);
+  }
+  // set advertised local name and service UUID:
+  BLE.setLocalName("Mando Kuki");
+  BLE.setAdvertisedService(S);
+  // add the characteristic to the service
+  S.addCharacteristic(X);
+  S.addCharacteristic(Y);
+  S.addCharacteristic(Vel);
+  S.addCharacteristic(B1);
+  s.addCharacteristic(B2);
+  // add service
+  BLE.addService(S);
+  // start advertising
+  BLE.advertise();
+  Serial.println("BLE LED Peripheral, waiting for connections....");
+}
+
+void loop() {
+  // listen for BLE peripherals to connect:
+  BLEDevice central = BLE.central();
+  // if a central is connected to peripheral:
+  if (central) {
+    Serial.print("Connected to central: ");
+    // print the central's MAC address:
+    Serial.println(central.address());
+    // while the central is still connected to peripheral:
+    while (central.connected()) {
+      
+      lectura();
+      delay(100);
+
+    // when the central disconnects, print it out:
+    }
+    Serial.print(F("Disconnected from central: "));
+    Serial.println(central.address());
+  }
+}
+
+void lectura() {
+
+  if (IMU.accelerationAvailable()) {
+    IMU.readAcceleration(Ax, Ay, Az);
+    Serial.print(Ax);
+    Serial.print('\t');
+    Serial.print(Ay);
+    Serial.print('\t');
+    Serial.println(Az);
+    X.writeValue(Ax);
+    Y.writeValue(Ay);
+  }
+
+  int lectura_potenciometro = analogRead(A1);      
+  float PotVel = (float)lectura_potenciometro / 1023.0; // Normalizar a 0.0–1.0
+  PotVel = PotVel * 255.0;    // Ahora normalizado 0–10
+  Serial.print("Velocidad: ");
+  Serial.println(PotVel, 2);
+  Vel.writeValue(PotVel);
+
+  int buttonState1 = digitalRead(boton_girar_menos_90);
+
+      if (buttonState1 == LOW) {
+        Switch1 = !Switch1;
+        delay(500);
+
+        if (Switch1) {
+          Serial.println("ON");
+          B1.writeValue((byte)0x01);
+        }
+        else {
+          B1.writeValue((byte)0x00);
+          Serial.println("OFF");
+        }
+      }           
+  int buttonState2 = digitalRead(boton_girar_mas_90);
+
+      if (buttonState2 == LOW) {
+        Switch2 = !Switch2;
+        delay(500);
+
+        if (Switch2) {
+          Serial.println("ON");
+          B2.writeValue((byte)0x01);
+        }
+        else {
+          B2.writeValue((byte)0x00);
+          Serial.println("OFF");
+        }
+      }
+
+}
+
+
+
+
