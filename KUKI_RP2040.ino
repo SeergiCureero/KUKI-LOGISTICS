@@ -7,7 +7,8 @@ int vel;
 
 bool COMSBLT = false;
 
-char instrucciones[] = {'a','n','b','n','c','n','d','n','e','n','f','n','g','n','h','n'}; 
+char instrucciones[] =  {'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' }; 
+int pasos[] =         {1,10 ,  1 ,  8 ,   1,  10,   1,  8,   1,  10,   1,  8,   1,  10,   1,  8,   1,  10,   1,  8};   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
 int numeroInstruccion = 0;
 
 unsigned long tiempoActual = 0;       //cuando se alcance este tiempo se ejecuta cierta parte del codigo
@@ -115,8 +116,15 @@ void setup() {
 
 void loop() {
     
-  // Envia mensaje al MEGA
-  
+  //REVISA SI EL NUMERO DE INSTRUCCIONES Y EL DE PASOS ES EL MISMO, SI NO, AVISA. El codigo se ejecutará bien y no dara error pero funcionará mal
+  if(sizeof(instrucciones)<sizeof(pasos)){
+    Serial.print("_____ERROR Numero de instrucciones menor que pasos_____");
+    Serial.println(String(sizeof(instrucciones)) + " < " + String(sizeof(pasos)));
+  }
+  else if(sizeof(instrucciones)>sizeof(pasos)){
+    Serial.print("_____ERROR Numero de pasos menor que intrucciones_____");
+    Serial.println(String(sizeof(instrucciones))  + " > " +  String(sizeof(pasos)));
+  }
 
   // check if a peripheral has been discovered
   BLEDevice peripheral = BLE.available();
@@ -146,16 +154,24 @@ void loop() {
 
   else if (!COMSBLT){
     //automatico, sin comunicacion
-    vel = 100;
+    vel = 50;
     tiempoActual = millis();
 
-    if (tiempoActual - tiempoAnterior >= intervalo) {
+    if (tiempoActual - tiempoAnterior >= intervalo*pasos[numeroInstruccion]) {
       tiempoAnterior = tiempoActual;  // Actualiza el contador
-      if(numeroInstruccion < sizeof(instrucciones)){
+
+      Serial.println("Instruccion numero: " + String(numeroInstruccion) + " = " +  instrucciones[numeroInstruccion] + " | Vel:  " + vel);
+      msg = instrucciones[numeroInstruccion] + String(vel);
+      Serial1.println(msg);
+
+
+      if(numeroInstruccion < sizeof(instrucciones)-1){
         numeroInstruccion += 1;
       }
+      else{
+        numeroInstruccion = 0;
+      }
     }
-    Serial.println("Instruccion numero " + String(numeroInstruccion) + instrucciones[numeroInstruccion]);
-    msg = instrucciones[numeroInstruccion] + String(vel);
+    
   }
 }
