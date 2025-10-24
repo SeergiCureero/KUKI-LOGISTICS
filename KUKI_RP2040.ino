@@ -30,13 +30,6 @@ void loop() {
   delay(1000);
   */
 
-
-  msg = String(dir) + String(vel);
-  Serial1.println(msg);
-  Serial.print("Mensaje enviado: ");
-  Serial.println(msg);
-  delay(velocidadDeTransmision);
-  
   // check if a peripheral has been discovered
   BLEDevice peripheral = BLE.available();
   if (peripheral) {
@@ -48,6 +41,7 @@ void loop() {
     Serial.print("' ");
     Serial.print(peripheral.advertisedServiceUuid());
     Serial.println();
+   
     if (peripheral.localName().indexOf("Mando Kuki") < 0) {
       Serial.println("Kuki no encontrado");
       return;  // If the name doesn't have "Button Device" in it then ignore it
@@ -124,9 +118,18 @@ void prog(BLEDevice peripheral) {
 
       if (abs(valX) < threshold && abs(valY) < threshold) Serial.println("Recto");
 
+      Serial.println(valVel);
     }
+    
+    msg = String(dir) + String(vel);
+    Serial1.println(msg);
+    Serial.print("Mensaje enviado: ");
+    Serial.println(msg);
 
     delay(100);
+  }
+  Serial.println("Peripheral disconnected");
+}
   }
   Serial.println("Peripheral disconnected");
 }
