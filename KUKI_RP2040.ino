@@ -4,7 +4,6 @@
 String msg;
 char dir;
 int vel;
-int velocidadDeTransmision = 200;
 void setup() {
   // Pin GPIO5 com a RX
   // Pin GPIO4 com a TX
@@ -109,7 +108,7 @@ void prog(BLEDevice peripheral) {
       memcpy(&valY, bufY, sizeof(float));
       memcpy(&valVel, bufVel, sizeof(float));
 
-      valVel = vel;
+      vel = (int)valVel;  
 
        if (abs(valX) < threshold && abs(valY) < threshold) dir = 'n'; // centro
         else if (valX > threshold && valY > threshold) dir = 'b';      // arriba-derecha
