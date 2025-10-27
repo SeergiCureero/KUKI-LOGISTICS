@@ -5,10 +5,15 @@ String msg;
 char dir;
 int vel;
 
+//TODO definir pin input de selectorModoBLT y botonStartSecuencia
+#define selectorModoBLT 2
 bool COMSBLT = false;
 
-char instrucciones[] =  {'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' }; 
-int pasos[] =         {1,10 ,  1 ,  8 ,   1,  10,   1,  8,   1,  10,   1,  8,   1,  10,   1,  8,   1,  10,   1,  8};   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
+#define botonStartSecuencia 3
+bool StartSecuencia = flase;
+
+char instrucciones[] =  {     'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' }; 
+float pasos[] =         { 1 , 10 ,  1 ,8.5 ,  1 , 10 ,  1 ,8.5 ,  1 , 10 ,  1 ,8.5 ,  1 , 10 ,  1 ,8.5 ,  1 , 10 ,  1 ,8.5       };   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
 int numeroInstruccion = 0;
 
 unsigned long tiempoActual = 0;       //cuando se alcance este tiempo se ejecuta cierta parte del codigo
@@ -115,15 +120,28 @@ void setup() {
 }
 
 void loop() {
+
+  //leemos el estado del selector de modo
+  COMBLT = digitalRead(selectorModoBLT);
+
+
+  //leemos el estado del boton de StartSecuencia
+  if digitalRead(botonStartSecuencia){
+    //inicia la secuencia
+    StartSecuencia = true;
+  }
     
   //REVISA SI EL NUMERO DE INSTRUCCIONES Y EL DE PASOS ES EL MISMO, SI NO, AVISA. El codigo se ejecutará bien y no dara error pero funcionará mal
-  if(sizeof(instrucciones)<sizeof(pasos)){
-    Serial.print("_____ERROR Numero de instrucciones menor que pasos_____");
-    Serial.println(String(sizeof(instrucciones)) + " < " + String(sizeof(pasos)));
+  //(sizeof(instrucciones)/sizeof(instrucciones[0])) se divide el tamaño entero del array entre el tamaño del primer dato del array. sizeof() da el tamaño en bytes de TODO el array, pero el tamaño no indica el numero de elementos
+  int sizeInstrucciones = sizeof(instrucciones)/sizeof(instrucciones[0]);
+  int sizePasos = sizeof(pasos)/sizeof(pasos[0]);
+  if(sizeInstrucciones < sizePasos){
+    Serial.print("_____ERROR Numero de instrucciones MENOR (<) que pasos_____");
+    Serial.println(String(sizeInstrucciones) + " < " + String(sizePasos));
   }
-  else if(sizeof(instrucciones)>sizeof(pasos)){
-    Serial.print("_____ERROR Numero de pasos menor que intrucciones_____");
-    Serial.println(String(sizeof(instrucciones))  + " > " +  String(sizeof(pasos)));
+  else if(sizeInstrucciones > sizePasos){
+    Serial.print("_____ERROR Numero de instrucciones MAYOR (>) que pasos_____");
+    Serial.println(String(sizeInstrucciones)  + " > " +  String(sizePasos));
   }
 
   // check if a peripheral has been discovered
@@ -157,21 +175,27 @@ void loop() {
     vel = 50;
     tiempoActual = millis();
 
-    if (tiempoActual - tiempoAnterior >= intervalo*pasos[numeroInstruccion]) {
+    if ((tiempoActual - tiempoAnterior) >= (intervalo*pasos[numeroInstruccion])) {
       tiempoAnterior = tiempoActual;  // Actualiza el contador
+      if (StartSecuencia)
+      {
+        //ejecuta la secuencia solo si StartSecuencia es true (si se ha pulsado el boton y aun no se ha acabado la secuencia)
+        Serial.println("Instruccion numero: " + String(numeroInstruccion) + " = " +  instrucciones[numeroInstruccion] + " | Vel:  " + vel);
+        msg = instrucciones[numeroInstruccion] + String(vel);
+        Serial1.println(msg);
 
-      Serial.println("Instruccion numero: " + String(numeroInstruccion) + " = " +  instrucciones[numeroInstruccion] + " | Vel:  " + vel);
-      msg = instrucciones[numeroInstruccion] + String(vel);
-      Serial1.println(msg);
 
-
-      if(numeroInstruccion < sizeof(instrucciones)-1){
-        numeroInstruccion += 1;
+        if(numeroInstruccion < sizeInstrucciones-1){
+          numeroInstruccion += 1;
+        }
+        else{
+          numeroInstruccion = 0;
+          //para la secuencia
+          StartSecuencia = false;
+        }
       }
-      else{
-        numeroInstruccion = 0;
-      }
+      
+      
     }
-    
   }
 }
