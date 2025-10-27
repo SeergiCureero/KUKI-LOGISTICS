@@ -1,3 +1,4 @@
+
 #include <ArduinoBLE.h>
 //VARIABLES
 
@@ -10,23 +11,7 @@ int vel;
 bool COMSBLT = false;
 
 #define botonStartSecuencia 3
-bool startSecuencia = false;
-
-#define selectorEscribeSecuencia 4
-bool escribirSecuencia = false;
-char secuenciaManual[16];
-
-
-//Joystick para escribir la secuencia
-//TODO COMPLETAR
-#define val_X A0
-#define val_Y A1
-#define boton_ok 5
-#define botonGiroIzquierdas 6
-#define botonGiroDerechas 7
-int threshold_X;
-int threshold_Y;
-
+bool StartSecuencia = false;
 
 char instrucciones[] =  {     'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' }; 
 float pasos[] =         { 1 , 10 ,  1 ,8.5 ,  1 , 10 ,  1 ,8.5 ,  1 , 10 ,  1 ,8.5 ,  1 , 10 ,  1 ,8.5 ,  1 , 10 ,  1 ,8.5       };   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
@@ -144,11 +129,8 @@ void loop() {
   //leemos el estado del boton de StartSecuencia
   if digitalRead(botonStartSecuencia){
     //inicia la secuencia
-    startSecuencia = true;
+    StartSecuencia = true;
   }
-
-  //leemos el estado del selector de escribir secuencia
-  escribirSecuencia = digitalRead(selectorEscribeSecuencia);
     
   //REVISA SI EL NUMERO DE INSTRUCCIONES Y EL DE PASOS ES EL MISMO, SI NO, AVISA. El codigo se ejecutará bien y no dara error pero funcionará mal
   //(sizeof(instrucciones)/sizeof(instrucciones[0])) se divide el tamaño entero del array entre el tamaño del primer dato del array. sizeof() da el tamaño en bytes de TODO el array, pero el tamaño no indica el numero de elementos
@@ -190,164 +172,31 @@ void loop() {
   }
 
   else if (!COMSBLT){
-    //automatico, sin comunicacion. a elegir entre escribir secuencia y secuencia predefinida
+    //automatico, sin comunicacion
+    vel = 50;
+    tiempoActual = millis();
 
-    //modo escribir secuencia
-    if (escribirSecuencia)
-    {
-      //modo de secuencia manual
-      //se registra una secuencia y cuando se le da a marcha se ejecuta
-      int i = 0;
-      if (!startSecuencia && (secuenciaManual[0] = '0') && (i<((sizeof(secuenciaManual)/sizeof(secuenciaManual[0]))-1)))
+    if ((tiempoActual - tiempoAnterior) >= (intervalo*pasos[numeroInstruccion])) {
+      tiempoAnterior = tiempoActual;  // Actualiza el contador
+      if (StartSecuencia)
       {
-        //secuencia vacia. Llenar
-        char direccion = 'n';
-        /*
-        El mensaje que recibirá de la master sera un int con la dirección en la que se debe mover seguido de la velocidad. 
-        Direcciones:
-              a
-            h | b
-             \|/
-          g---+---c 
-             /|\
-            f | d
-              e
-        
-        Además, se deberá considerar movimientos con puntos de giro fuera del centro del AGV (como los de un coche normal)
-        - giro a izquierdas: i
-        - giro a derechas: j
-        */
-        
-        
-        bool derecha = (analogRead(val_X) > threshold_X);
-        bool izquierda = (analogRead(val_X) < threshold_X * -1);
-        bool adelante = (analogRead(val_Y) > threshold_Y);
-        bool atras = (analogRead(val_Y) < threshold_Y * -1);
-        bool giroIzquierda = botonGiroIzquierdas;
-        bool giroDerecha = botonGiroDerechas;
-        bool centroX = !derecha && !izquierda;
-        bool centroY = !adelante && !atras;
+        //ejecuta la secuencia solo si StartSecuencia es true (si se ha pulsado el boton y aun no se ha acabado la secuencia)
+        Serial.println("Instruccion numero: " + String(numeroInstruccion) + " = " +  instrucciones[numeroInstruccion] + " | Vel:  " + vel);
+        msg = instrucciones[numeroInstruccion] + String(vel);
+        Serial1.println(msg);
 
-        if (adelante && centroX)
-        {
-          direccion = 'a';
+
+        if(numeroInstruccion < sizeInstrucciones-1){
+          numeroInstruccion += 1;
         }
-        else if (adelante && derecha)
-        {
-          direccion = 'b';
-        }
-        else if (centroY && derecha)
-        {
-          direccion = 'c';
-        }
-        else if (atras && derecha)
-        {
-          direccion = 'd';
-        }
-        else if (atras && centroX)
-        {
-          direccion = 'e';
-        }
-        else if (atras && izquierda)
-        {
-          direccion = 'f';
-        }
-        else if (centroY && izquierda)
-        {
-          direccion = 'g';
-        }
-        else if (adelante && izquierda)
-        {
-          direccion = 'h';
-        }
-        else if (centroX && centroY)
-        {
-          if (giroIzquierda){
-            direccion = 'i';
-          } 
-          else if (giroDerecha && )
-          {
-            direccion = 'j';
-          }
-          else
-          {
-            direccion = 'n'
-          } 
-        }
-        
-        
-        tiempoActual = millis();
-        //guarda la direccion cada X tiempo (100ms*5), esto evita que guardemos muchas instrucciones que no queremos. El boton no registra un flanco, asi que solo entraremos cuando toque.
-        if (boton_ok && ((tiempoActual - tiempoAnterior) >= intervalo*5))
-        {
-          tiempoAnterior = tiempoActual;  // Actualiza el contador
-          secuenciaManual[i] = direccion;
-          i++
+        else{
+          numeroInstruccion = 0;
+          //para la secuencia
+          StartSecuencia = false;
         }
       }
       
-      else if (startSecuencia){
-        //igual que modo automatico pero con la lista cambiada
-//TODO: no duplicar este codigo
-        vel = 50;
-        tiempoActual = millis();
-
-        //valor de intervalo FIJO
-        if ((tiempoActual - tiempoAnterior) >= intervalo*10) {
-          tiempoAnterior = tiempoActual;  // Actualiza el contador
-          if (startSecuencia)
-          {
-            //ejecuta la secuencia solo si startSecuencia es true (si se ha pulsado el boton y aun no se ha acabado la secuencia)
-            Serial.println("Instruccion numero: " + String(numeroInstruccion) + " = " +  secuenciaManual[numeroInstruccion] + " | Vel:  " + vel);
-            msg = secuenciaManual[numeroInstruccion] + String(vel);
-            Serial1.println(msg);
-
-            //15 = numero de instrucciones (en vdd son 16, pero no hay instruccion 16, llega hasta la 15)
-            if(numeroInstruccion < 15){
-              numeroInstruccion += 1;
-            }
-            else{
-              numeroInstruccion = 0;
-              //para la secuencia
-              startSecuencia = false;
-            }
-          }         
-        }
-      }
+      
     }
-
-    //modo automatico
-    else
-    {
-      //MODO AUTOMATICO
-      vel = 50;
-      tiempoActual = millis();
-
-      if ((tiempoActual - tiempoAnterior) >= (intervalo*pasos[numeroInstruccion])) {
-        tiempoAnterior = tiempoActual;  // Actualiza el contador
-        if (startSecuencia)
-        {
-          //ejecuta la secuencia solo si startSecuencia es true (si se ha pulsado el boton y aun no se ha acabado la secuencia)
-          Serial.println("Instruccion numero: " + String(numeroInstruccion) + " = " +  instrucciones[numeroInstruccion] + " | Vel:  " + vel);
-          msg = instrucciones[numeroInstruccion] + String(vel);
-          Serial1.println(msg);
-
-
-          if(numeroInstruccion < sizeInstrucciones-1){
-            numeroInstruccion += 1;
-          }
-          else{
-            numeroInstruccion = 0;
-            //para la secuencia
-            startSecuencia = false;
-          }
-        }
-        
-        
-      }
-    }
-    
-    
-    
   }
 }
