@@ -265,7 +265,7 @@ void loop() {
           if (giroIzquierda){
             direccion = 'i';
           } 
-          else if (giroDerecha && )
+          else if (giroDerecha)
           {
             direccion = 'j';
           }
