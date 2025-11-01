@@ -1,10 +1,9 @@
-
 #include <ArduinoBLE.h>
 //VARIABLES
 
 String msg;
 char dir;
-int vel;
+int vel = 100;
 
 //TODO definir pin input de selectorModoBLT y botonStartSecuencia
 #define selectorModoBLT 2
@@ -14,7 +13,7 @@ bool COMSBLT = false;
 bool StartSecuencia = false;
 
 char instrucciones[] =  {     'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' }; 
-float pasos[] =         { 1 , 10 ,  1 ,8.5 ,  1 , 10 ,  1 ,8.5 ,  1 , 10 ,  1 ,8.5 ,  1 , 10 ,  1 ,8.5 ,  1 , 10 ,  1 ,8.5       };   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
+float pasos[] =         { 1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7       };   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
 int numeroInstruccion = 0;
 
 unsigned long tiempoActual = 0;       //cuando se alcance este tiempo se ejecuta cierta parte del codigo
@@ -118,16 +117,18 @@ void setup() {
   Serial.println("KUKI");
   // start scanning for Button Device BLE peripherals
   BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
+  pinMode(selectorModoBLT, INPUT);
+  pinMode(botonStartSecuencia, INPUT);
 }
 
 void loop() {
 
   //leemos el estado del selector de modo
-  COMBLT = digitalRead(selectorModoBLT);
+  COMSBLT = digitalRead(selectorModoBLT);
 
 
   //leemos el estado del boton de StartSecuencia
-  if digitalRead(botonStartSecuencia){
+  if (digitalRead(botonStartSecuencia)){
     //inicia la secuencia
     StartSecuencia = true;
   }
@@ -173,7 +174,7 @@ void loop() {
 
   else if (!COMSBLT){
     //automatico, sin comunicacion
-    vel = 50;
+    //vel = 100;
     tiempoActual = millis();
 
     if ((tiempoActual - tiempoAnterior) >= (intervalo*pasos[numeroInstruccion])) {
