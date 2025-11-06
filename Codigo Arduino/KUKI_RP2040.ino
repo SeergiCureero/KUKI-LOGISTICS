@@ -1,16 +1,22 @@
+// 700ms y 170 vel es = 108º 
 #include <ArduinoBLE.h>
 //VARIABLES
 
 String msg;
 char dir;
-int vel = 100;
+int vel = 170;
 
-//TODO definir pin input de selectorModoBLT y botonStart
+//TODO definir pin input de selectorModoBLT , botonStartSecuencia Y numeroSecuencias
 #define selectorModoBLT 2
 bool COMSBLT = false;
 
-#define botonStart 3
-bool start = false;
+#define botonStartSecuencia 3
+bool StartSecuencia = false;
+
+#define numeroSecuencias 4
+int Secuencias = 0; //numero de secuencias que hace
+int estatAnterior = LOW; // Emmagatzema l'estat anterior del botó
+int estatActual = LOW;
 
 char instrucciones[] =  {     'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' }; 
 float pasos[] =         { 1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7       };   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
@@ -118,7 +124,9 @@ void setup() {
   // start scanning for Button Device BLE peripherals
   BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
   pinMode(selectorModoBLT, INPUT);
-  pinMode(botonStart, INPUT);
+  pinMode(botonStartSecuencia, INPUT);
+  pinMode(numeroSecuencias, INPUT);
+
 }
 
 void loop() {
@@ -126,11 +134,22 @@ void loop() {
   //leemos el estado del selector de modo
   COMSBLT = digitalRead(selectorModoBLT);
 
+  
+  
+  estatActual = digitalRead(numeroSecuencias);
+  if ((estatAnterior == LOW && estatActual == HIGH) && !StartSecuencia) { 
+    Secuencias += 1;
+    Serial.println("Num sec: " + String(Secuencias) );
+  }
+  estatAnterior = estatActual;
+  
 
-  //leemos el estado del boton de start
-  if (digitalRead(botonStart)){
+  //leemos el estado del boton de StartSecuencia
+  if (digitalRead(botonStartSecuencia)){
     //inicia la secuencia
-    start = true;
+    StartSecuencia = true;
+    Serial.println("a");
+    if(Secuencias == 0){Secuencias = 1;}
   }
     
   //REVISA SI EL NUMERO DE INSTRUCCIONES Y EL DE PASOS ES EL MISMO, SI NO, AVISA. El codigo se ejecutará bien y no dara error pero funcionará mal
@@ -174,27 +193,32 @@ void loop() {
 
   else if (!COMSBLT){
     //automatico, sin comunicacion
-    //vel = 100;
     tiempoActual = millis();
 
     if ((tiempoActual - tiempoAnterior) >= (intervalo*pasos[numeroInstruccion])) {
       tiempoAnterior = tiempoActual;  // Actualiza el contador
-      if (start)
+      if (StartSecuencia)
       {
-        //ejecuta la secuencia solo si start es true (si se ha pulsado el boton y aun no se ha acabado la secuencia)
-        Serial.println("Instruccion numero: " + String(numeroInstruccion) + " = " +  instrucciones[numeroInstruccion] + " | Vel:  " + vel);
-        msg = instrucciones[numeroInstruccion] + String(vel);
-        Serial1.println(msg);
+        Serial.println(Secuencias);
+        if(Secuencias == 0){StartSecuencia = false;}  
+
+        if(Secuencias > 0){
+          Serial.println("hola");
+          //ejecuta la secuencia solo si StartSecuencia es true (si se ha pulsado el boton y aun no se ha acabado la secuencia)
+          Serial.println("Instruccion numero: " + String(numeroInstruccion) + " = " +  instrucciones[numeroInstruccion] + " | Vel:  " + vel);
+          msg = instrucciones[numeroInstruccion] + String(vel);
+          Serial1.println(msg);
 
 
-        if(numeroInstruccion < sizeInstrucciones-1){
-          numeroInstruccion += 1;
+          if(numeroInstruccion < sizeInstrucciones-1){
+            numeroInstruccion += 1;
+          }
+          else{
+            numeroInstruccion = 0;
+            Secuencias -= 1; 
+          }
         }
-        else{
-          numeroInstruccion = 0;
-          //para la secuencia
-          start = false;
-        }
+        
       }
       
       
