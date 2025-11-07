@@ -4,7 +4,7 @@
 
 String msg;
 char dir;
-int vel = 170;
+int vel = 35;
 
 //TODO definir pin input de selectorModoBLT , botonStartSecuencia Y numeroSecuencias
 #define selectorModoBLT 2
@@ -17,6 +17,9 @@ bool StartSecuencia = false;
 int Secuencias = 0; //numero de secuencias que hace
 int estatAnterior = LOW; // Emmagatzema l'estat anterior del botó
 int estatActual = LOW;
+
+#define Luz_start 5
+#define Luz_blutuch 6
 
 char instrucciones[] =  {     'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' }; 
 float pasos[] =         { 1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7       };   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
@@ -31,6 +34,7 @@ void prog(BLEDevice peripheral) {
   Serial.println("Connecting ...");
   if (peripheral.connect()) {
     Serial.println("Connected");
+    digitalWrite(Luz_blutuch, HIGH);
   } else {
     Serial.println("Failed to connect!");
     return;
@@ -126,7 +130,8 @@ void setup() {
   pinMode(selectorModoBLT, INPUT);
   pinMode(botonStartSecuencia, INPUT);
   pinMode(numeroSecuencias, INPUT);
-
+  pinMode(Luz_start, OUTPUT);
+  pinMode(Luz_blutuch, OUTPUT);
 }
 
 void loop() {
@@ -194,6 +199,7 @@ void loop() {
   else if (!COMSBLT){
     //automatico, sin comunicacion
     tiempoActual = millis();
+    digitalWrite(Luz_blutuch, LOW);
 
     if ((tiempoActual - tiempoAnterior) >= (intervalo*pasos[numeroInstruccion])) {
       tiempoAnterior = tiempoActual;  // Actualiza el contador
@@ -201,8 +207,9 @@ void loop() {
       {
         Serial.println(Secuencias);
         if(Secuencias == 0){StartSecuencia = false;}  
-
+        
         if(Secuencias > 0){
+          digitalWrite(Luz_start, HIGH);
           Serial.println("hola");
           //ejecuta la secuencia solo si StartSecuencia es true (si se ha pulsado el boton y aun no se ha acabado la secuencia)
           Serial.println("Instruccion numero: " + String(numeroInstruccion) + " = " +  instrucciones[numeroInstruccion] + " | Vel:  " + vel);
@@ -216,6 +223,7 @@ void loop() {
           else{
             numeroInstruccion = 0;
             Secuencias -= 1; 
+            digitalWrite(Luz_start, LOW);
           }
         }
         
