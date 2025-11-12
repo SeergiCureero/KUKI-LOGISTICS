@@ -183,7 +183,7 @@ void loop() {
     Serial.println();
    
     if (peripheral.localName().indexOf("Mando Kuki") < 0) {
-      Serial.println("Kuki no encontrado");
+      Serial.println("mando kuki no encontrado");
       return;  // If the name doesn't have "Button Device" in it then ignore it
     }
     // stop scanning
