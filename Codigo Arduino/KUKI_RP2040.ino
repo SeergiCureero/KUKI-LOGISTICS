@@ -15,7 +15,7 @@ bool StartSecuencia = false;
 
 #define numeroSecuencias 4
 int Secuencias = 0; //numero de secuencias que hace
-int estatAnterior = LOW; // Emmagatzema l'estat anterior del botó
+int estatAnterior = LOW; // Almacena el estado anterior del botón
 int estatActual = LOW;
 
 #define Luz_start 5
