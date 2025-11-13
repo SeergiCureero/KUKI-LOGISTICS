@@ -15,14 +15,14 @@ bool StartSecuencia = false;
 
 #define numeroSecuencias 4
 int Secuencias = 0; //numero de secuencias que hace
-int estatAnterior = LOW; // Almacena el estado anterior del botón
+int estatAnterior = LOW; // Emmagatzema l'estat anterior del botó
 int estatActual = LOW;
 
 #define Luz_start 5
 #define Luz_blutuch 6
 
 char instrucciones[] =  {     'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' }; 
-float pasos[] =         { 1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7       };   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
+float pasos[] =         { 1 , 15 ,  1 ,9.2 ,  1 , 15  ,  1 ,9.2 ,  1 , 15 ,  1 ,9.2 ,  1 , 15 ,  1 ,9.2 ,  1 , 15 ,  1 ,9.2       };   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
 int numeroInstruccion = 0;
 
 unsigned long tiempoActual = 0;       //cuando se alcance este tiempo se ejecuta cierta parte del codigo
@@ -39,7 +39,7 @@ void prog(BLEDevice peripheral) {
     Serial.println("Failed to connect!");
     return;
   }
-  // descubrir atributos periféricos
+  // discover peripheral attributes
   Serial.println("Discovering attributes ...");
   if (peripheral.discoverAttributes()) {
     Serial.println("Attributes discovered");
@@ -48,7 +48,7 @@ void prog(BLEDevice peripheral) {
     peripheral.disconnect();
     return;
   }
-  // Caracteristicas del servicio
+  // retrieve the LED characteristic
   BLECharacteristic X = peripheral.characteristic("19b10001-e8f2-537e-4f6c-d104768a1214");
   BLECharacteristic Y = peripheral.characteristic("19b10002-e8f2-537e-4f6c-d104768a1214");
   BLECharacteristic Vel = peripheral.characteristic("19b10004-e8f2-537e-4f6c-d104768a1214");
@@ -68,7 +68,7 @@ void prog(BLEDevice peripheral) {
     return;
   }
   while (peripheral.connected()) {
-    // Mientras el periférico esté conectado
+    // while the peripheral is connected
     if (X.canRead() && Y.canRead() &&  Vel.canRead()) {
       // Buffers para cada float (4 bytes)
       uint8_t bufX[4], bufY[4], bufVel[4];
