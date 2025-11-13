@@ -3,14 +3,13 @@
 
 float Ax, Ay, Az;
 
-BLEService S("19B10000-E8F2-537E-4F6C-D104768A1214"); // BLE LED Service
-// BLE LED Switch Characteristic - custom 128-bit UUID, read and writable by central
+BLEService S("19B10000-E8F2-537E-4F6C-D104768A1214"); // BLE servicio del mando
+// BLE Characteristic - custom 128-bit UUID, read and writable by central
 BLEFloatCharacteristic X("19B10001-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
 BLEFloatCharacteristic Y("19B10002-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
 BLEFloatCharacteristic Vel("19B10004-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
 void setup() {
   Serial.begin(9600);
-  // begin initialization
   if (!BLE.begin()) {
     Serial.println("starting Bluetooth® Low Energy failed!");
   }
@@ -19,42 +18,42 @@ void setup() {
 
     while (1);
   }
-  // set advertised local name and service UUID:
+  // meter el nombre del servicio y el nombre local del bluetooth.
   BLE.setLocalName("Mando Kuki");
   BLE.setAdvertisedService(S);
-  // add the characteristic to the service
+  // añadir las caracteristicas al servicio
   S.addCharacteristic(X);
   S.addCharacteristic(Y);
   S.addCharacteristic(Vel);
-  // add service
+  // añadir servicio
   BLE.addService(S);
-  // start advertising
+  // comenzar el advertise
   BLE.advertise();
-  Serial.println("BLE LED Peripheral, waiting for connections....");
+  Serial.println("BLE Mando, esperando a conexiones.....");
 }
 
 void loop() {
-  // listen for BLE peripherals to connect:
+  // escuchando por BLE peripherals para conectarse:
   BLEDevice central = BLE.central();
-  // if a central is connected to peripheral:
+  // si la central esta conectada
   if (central) {
-    Serial.print("Connected to central: ");
-    // print the central's MAC address:
+    Serial.print("Conectada a central: ");
+    // imprime la direccion de la central
     Serial.println(central.address());
-    // while the central is still connected to peripheral:
+    // siempre que este conectado a la central: 
     while (central.connected()) {
       lectura();
       delay(100);
 
-    // when the central disconnects, print it out:
+    // cuando se desconecta:
     }
-    Serial.print(F("Disconnected from central: "));
+    Serial.print(F("desconectado de central:  "));
     Serial.println(central.address());
   }
 }
-
+ 
 void lectura() {
-
+// lectura del acelorometro y envio por bluetooth
   if (IMU.accelerationAvailable()) {
     IMU.readAcceleration(Ax, Ay, Az);
     Serial.print(Ax);
@@ -65,7 +64,7 @@ void lectura() {
     X.writeValue(Ax);
     Y.writeValue(Ay);
   }
-
+ // lectura del potenciometro y envio por bluetooth
   int lectura_potenciometro = analogRead(A1);      
   float PotVel = (float)lectura_potenciometro / 1023.0; // Normalizar a 0.0–1.0
   PotVel = PotVel * 255.0;    // Ahora normalizado 0–10
