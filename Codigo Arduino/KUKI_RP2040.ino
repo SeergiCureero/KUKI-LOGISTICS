@@ -48,7 +48,7 @@ void prog(BLEDevice peripheral) {
     peripheral.disconnect();
     return;
   }
-  // retrieve the LED characteristic
+  // Caracteristicas del servicio
   BLECharacteristic X = peripheral.characteristic("19b10001-e8f2-537e-4f6c-d104768a1214");
   BLECharacteristic Y = peripheral.characteristic("19b10002-e8f2-537e-4f6c-d104768a1214");
   BLECharacteristic Vel = peripheral.characteristic("19b10004-e8f2-537e-4f6c-d104768a1214");
