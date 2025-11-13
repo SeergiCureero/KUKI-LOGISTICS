@@ -204,7 +204,7 @@ void loop() {
   else if (!COMSBLT){
     //automatico, sin comunicacion
     tiempoActual = millis();
-
+    //Compara si ha pasado el tiempo suficiente para ejecutar la instrucción actual.
     if ((tiempoActual - tiempoAnterior) >= (intervalo*pasos[numeroInstruccion])) {
       tiempoAnterior = tiempoActual;  // Actualiza el contador
       if (StartSecuencia){
