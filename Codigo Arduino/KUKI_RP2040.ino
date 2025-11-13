@@ -1,11 +1,12 @@
+// 700ms y 170 vel es = 108º 
 #include <ArduinoBLE.h>
 //VARIABLES
 
-// Mensaje para enviar por serial al MEGA
 String msg;
 char dir;
 int vel = 35;
 
+//TODO definir pin input de selectorModoBLT , botonStartSecuencia Y numeroSecuencias
 #define selectorModoBLT 2
 bool COMSBLT = false;
 
@@ -17,11 +18,9 @@ int Secuencias = 0; //numero de secuencias que hace
 int estatAnterior = LOW; // Emmagatzema l'estat anterior del botó
 int estatActual = LOW;
 
-// estos son led de estado aun no habilitados
 #define Luz_start 5
 #define Luz_blutuch 6
 
-// estas son las intrucciones para que haga la figura 
 char instrucciones[] =  {     'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' }; 
 float pasos[] =         { 1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7       };   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
 int numeroInstruccion = 0;
@@ -31,16 +30,16 @@ unsigned long tiempoAnterior = 0;     // Guardamos la ultima ejecucion
 const unsigned long intervalo = 100;  // 100 ms
 
 void prog(BLEDevice peripheral) {
-  // conectando peripheral
+  // connect to the peripheral
   Serial.println("Connecting ...");
   if (peripheral.connect()) {
     Serial.println("Connected");
-    digitalWrite(Luz_blutuch, HIGH);
+    
   } else {
     Serial.println("Failed to connect!");
     return;
   }
-  // Descubrir atributos del mando 
+  // discover peripheral attributes
   Serial.println("Discovering attributes ...");
   if (peripheral.discoverAttributes()) {
     Serial.println("Attributes discovered");
@@ -49,27 +48,27 @@ void prog(BLEDevice peripheral) {
     peripheral.disconnect();
     return;
   }
-  // Las caracteristicas del peripheral del mando 
+  // retrieve the LED characteristic
   BLECharacteristic X = peripheral.characteristic("19b10001-e8f2-537e-4f6c-d104768a1214");
   BLECharacteristic Y = peripheral.characteristic("19b10002-e8f2-537e-4f6c-d104768a1214");
   BLECharacteristic Vel = peripheral.characteristic("19b10004-e8f2-537e-4f6c-d104768a1214");
   if (!X) {
-    Serial.println("Peripheral no encuentra la caracteristica de X");
+    Serial.println("Peripheral does not have LED characteristic!");
     peripheral.disconnect();
     return;
   }
   if (!Y) {
-    Serial.println("Peripheral no encuentra la caracteristica de Y");
+    Serial.println("Peripheral does not have LED characteristic!");
     peripheral.disconnect();
     return;
   }
   if (!Vel) {
-    Serial.println(Peripheral no encuentra la caracteristica de Vel);
+    Serial.println("Peripheral does not have LED characteristic!");
     peripheral.disconnect();
     return;
   }
   while (peripheral.connected()) {
-    // Siempre que el preipheral este conecado
+    // while the peripheral is connected
     if (X.canRead() && Y.canRead() &&  Vel.canRead()) {
       // Buffers para cada float (4 bytes)
       uint8_t bufX[4], bufY[4], bufVel[4];
@@ -123,10 +122,10 @@ void setup() {
   
   Serial1.begin(9600); // UART1: RX=5, TX=4 
   Serial.begin(9600); // Debug por puerto USB
-  // inicializar el modulo bluetooth del RP2040 KUKI
+  // initialize the BLE hardware
   BLE.begin();
   Serial.println("KUKI");
-  // Empieza a buscar el mando por el modulo bluetooth
+  // start scanning for Button Device BLE peripherals
   BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
   pinMode(selectorModoBLT, INPUT);
   pinMode(botonStartSecuencia, INPUT);
@@ -140,7 +139,12 @@ void loop() {
   //leemos el estado del selector de modo
   COMSBLT = digitalRead(selectorModoBLT);
 
-  
+  if (COMSBLT){
+    digitalWrite(Luz_blutuch, HIGH);
+  }
+  else{
+    digitalWrite(Luz_blutuch, LOW);
+  }
   
   estatActual = digitalRead(numeroSecuencias);
   if ((estatAnterior == LOW && estatActual == HIGH) && !StartSecuencia) { 
@@ -171,12 +175,10 @@ void loop() {
     Serial.println(String(sizeInstrucciones)  + " > " +  String(sizePasos));
   }
 
-  // Comprueba si peripheral ha sido descubierto
+  // check if a peripheral has been discovered
   BLEDevice peripheral = BLE.available();
-  // siempre que peripheral y el selector de bluetooth este activo
   if (peripheral && COMSBLT) {
-    
-    // A descubierto a peripheral, imprimimos la dirección, el nombre local y el servicio
+    // discovered a peripheral, print out address, local name, and advertised service
     Serial.print("Found ");
     Serial.print(peripheral.address());
     Serial.print(" '");
@@ -186,34 +188,32 @@ void loop() {
     Serial.println();
    
     if (peripheral.localName().indexOf("Mando Kuki") < 0) {
-      Serial.println("mando kuki no encontrado");
-      return; 
+      Serial.println("Kuki no encontrado");
+      return;  // If the name doesn't have "Button Device" in it then ignore it
     }
-    // para de escanear
+    // stop scanning
     BLE.stopScan();
     
     prog(peripheral);
     
     
-    // Peripheral desconectado, lo vuelve a buscar
+    // peripheral disconnected, start scanning again
     BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
   }
 
-    // Si el selector de bluetooth esta desactivoado entonces entra en modo automatico
   else if (!COMSBLT){
     //automatico, sin comunicacion
     tiempoActual = millis();
-    digitalWrite(Luz_blutuch, LOW);
 
     if ((tiempoActual - tiempoAnterior) >= (intervalo*pasos[numeroInstruccion])) {
       tiempoAnterior = tiempoActual;  // Actualiza el contador
-      if (StartSecuencia)
-      {
+      if (StartSecuencia){
+        digitalWrite(Luz_start, HIGH);
         Serial.println(Secuencias);
         if(Secuencias == 0){StartSecuencia = false;}  
         
         if(Secuencias > 0){
-          digitalWrite(Luz_start, HIGH);
+          
           Serial.println("hola");
           //ejecuta la secuencia solo si StartSecuencia es true (si se ha pulsado el boton y aun no se ha acabado la secuencia)
           Serial.println("Instruccion numero: " + String(numeroInstruccion) + " = " +  instrucciones[numeroInstruccion] + " | Vel:  " + vel);
@@ -227,12 +227,12 @@ void loop() {
           else{
             numeroInstruccion = 0;
             Secuencias -= 1; 
-            digitalWrite(Luz_start, LOW);
+            
           }
         }
         
       }
-      
+      digitalWrite(Luz_start, LOW);
       
     }
   }
