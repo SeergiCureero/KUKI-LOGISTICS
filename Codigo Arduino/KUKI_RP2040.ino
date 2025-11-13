@@ -1,12 +1,11 @@
-// 700ms y 170 vel es = 108º 
 #include <ArduinoBLE.h>
 //VARIABLES
 
+// Mensaje para enviar por serial al MEGA
 String msg;
 char dir;
 int vel = 35;
 
-//TODO definir pin input de selectorModoBLT , botonStartSecuencia Y numeroSecuencias
 #define selectorModoBLT 2
 bool COMSBLT = false;
 
@@ -18,9 +17,11 @@ int Secuencias = 0; //numero de secuencias que hace
 int estatAnterior = LOW; // Emmagatzema l'estat anterior del botó
 int estatActual = LOW;
 
+// estos son led de estado aun no habilitados
 #define Luz_start 5
 #define Luz_blutuch 6
 
+// estas son las intrucciones para que haga la figura 
 char instrucciones[] =  {     'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' }; 
 float pasos[] =         { 1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7 ,  1 , 10 ,  1 ,7       };   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
 int numeroInstruccion = 0;
@@ -30,7 +31,7 @@ unsigned long tiempoAnterior = 0;     // Guardamos la ultima ejecucion
 const unsigned long intervalo = 100;  // 100 ms
 
 void prog(BLEDevice peripheral) {
-  // connect to the peripheral
+  // conectando peripheral
   Serial.println("Connecting ...");
   if (peripheral.connect()) {
     Serial.println("Connected");
@@ -39,7 +40,7 @@ void prog(BLEDevice peripheral) {
     Serial.println("Failed to connect!");
     return;
   }
-  // discover peripheral attributes
+  // Descubrir atributos del mando 
   Serial.println("Discovering attributes ...");
   if (peripheral.discoverAttributes()) {
     Serial.println("Attributes discovered");
@@ -48,27 +49,27 @@ void prog(BLEDevice peripheral) {
     peripheral.disconnect();
     return;
   }
-  // retrieve the LED characteristic
+  // Las caracteristicas del peripheral del mando 
   BLECharacteristic X = peripheral.characteristic("19b10001-e8f2-537e-4f6c-d104768a1214");
   BLECharacteristic Y = peripheral.characteristic("19b10002-e8f2-537e-4f6c-d104768a1214");
   BLECharacteristic Vel = peripheral.characteristic("19b10004-e8f2-537e-4f6c-d104768a1214");
   if (!X) {
-    Serial.println("Peripheral does not have LED characteristic!");
+    Serial.println("Peripheral no encuentra la caracteristica de X");
     peripheral.disconnect();
     return;
   }
   if (!Y) {
-    Serial.println("Peripheral does not have LED characteristic!");
+    Serial.println("Peripheral no encuentra la caracteristica de Y");
     peripheral.disconnect();
     return;
   }
   if (!Vel) {
-    Serial.println("Peripheral does not have LED characteristic!");
+    Serial.println(Peripheral no encuentra la caracteristica de Vel);
     peripheral.disconnect();
     return;
   }
   while (peripheral.connected()) {
-    // while the peripheral is connected
+    // Siempre que el preipheral este conecado
     if (X.canRead() && Y.canRead() &&  Vel.canRead()) {
       // Buffers para cada float (4 bytes)
       uint8_t bufX[4], bufY[4], bufVel[4];
@@ -122,10 +123,10 @@ void setup() {
   
   Serial1.begin(9600); // UART1: RX=5, TX=4 
   Serial.begin(9600); // Debug por puerto USB
-  // initialize the BLE hardware
+  // inicializar el modulo bluetooth del RP2040 KUKI
   BLE.begin();
   Serial.println("KUKI");
-  // start scanning for Button Device BLE peripherals
+  // Empieza a buscar el mando por el modulo bluetooth
   BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
   pinMode(selectorModoBLT, INPUT);
   pinMode(botonStartSecuencia, INPUT);
@@ -170,10 +171,12 @@ void loop() {
     Serial.println(String(sizeInstrucciones)  + " > " +  String(sizePasos));
   }
 
-  // check if a peripheral has been discovered
+  // Comprueba si peripheral ha sido descubierto
   BLEDevice peripheral = BLE.available();
+  // siempre que peripheral y el selector de bluetooth este activo
   if (peripheral && COMSBLT) {
-    // discovered a peripheral, print out address, local name, and advertised service
+    
+    // A descubierto a peripheral, imprimimos la dirección, el nombre local y el servicio
     Serial.print("Found ");
     Serial.print(peripheral.address());
     Serial.print(" '");
@@ -184,18 +187,19 @@ void loop() {
    
     if (peripheral.localName().indexOf("Mando Kuki") < 0) {
       Serial.println("mando kuki no encontrado");
-      return;  // If the name doesn't have "Button Device" in it then ignore it
+      return; 
     }
-    // stop scanning
+    // para de escanear
     BLE.stopScan();
     
     prog(peripheral);
     
     
-    // peripheral disconnected, start scanning again
+    // Peripheral desconectado, lo vuelve a buscar
     BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
   }
 
+    // Si el selector de bluetooth esta desactivoado entonces entra en modo automatico
   else if (!COMSBLT){
     //automatico, sin comunicacion
     tiempoActual = millis();
