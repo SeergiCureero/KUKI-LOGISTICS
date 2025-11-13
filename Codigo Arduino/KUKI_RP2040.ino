@@ -178,7 +178,7 @@ void loop() {
   // check if a peripheral has been discovered
   BLEDevice peripheral = BLE.available();
   if (peripheral && COMSBLT) {
-    // discovered a peripheral, print out address, local name, and advertised service
+    // Encuentra un periférico, coloca la dirección, el nombre local y el servicio anunciado
     Serial.print("Found ");
     Serial.print(peripheral.address());
     Serial.print(" '");
