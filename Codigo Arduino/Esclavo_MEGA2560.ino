@@ -44,6 +44,8 @@ void loop() {
   Serial1.println("Hola RP2040!");
   // Si recibe datos del RP2040, los muestra en el PC
   */
+
+  //Lee mensajes enviados por KUKI_RP2040
   if (Serial1.available()) {
     msg = Serial1.readStringUntil('\n');
     Serial.print("RP2040 dice: ");
