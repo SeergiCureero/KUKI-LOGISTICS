@@ -39,7 +39,7 @@ void prog(BLEDevice peripheral) {
     Serial.println("Failed to connect!");
     return;
   }
-  // discover peripheral attributes
+  // descubrir atributos periféricos
   Serial.println("Discovering attributes ...");
   if (peripheral.discoverAttributes()) {
     Serial.println("Attributes discovered");
@@ -68,7 +68,7 @@ void prog(BLEDevice peripheral) {
     return;
   }
   while (peripheral.connected()) {
-    // while the peripheral is connected
+    // Mientras el periférico esté conectado
     if (X.canRead() && Y.canRead() &&  Vel.canRead()) {
       // Buffers para cada float (4 bytes)
       uint8_t bufX[4], bufY[4], bufVel[4];
