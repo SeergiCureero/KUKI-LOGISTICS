@@ -1,12 +1,12 @@
-/* Establecemos comunicaciones entre Arduinos
-__Esclavo__ */
+/* Establecemos comunicaciones entre Arduinos.
+Esclavo */
 
 
-//VARIABLES
+// VARIABLES
 String msg;
 int vel;
 
-//VARIABLES MOTOR
+// VARIABLES MOTOR
 #define motor1A 2     
 #define motor1B 3     
 #define motor1Vel 4
