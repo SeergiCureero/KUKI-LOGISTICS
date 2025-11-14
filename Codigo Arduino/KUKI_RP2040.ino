@@ -21,8 +21,9 @@ int estatActual = LOW;
 #define Luz_start 5
 #define Luz_blutuch 6
 
+// El tiempo de la primera instrucción está en la posición 1, no en la 0. La 0 corresponde a los pasos de la última instrucción.
 char instrucciones[] =  {     'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' }; 
-float pasos[] =         { 1 , 12 ,  1 ,8 ,  1 , 12  ,  1 ,8 ,  1 , 12 ,  1 ,8 ,  1 , 12 ,  1 ,8 ,  1 , 12 ,  1 ,8      };   // El tiempo de la primera instrucción está en la posición 1, no en la 0. La 0 corresponde a los pasos de la última instrucción.
+float pasos[] =         { 1 , 12 ,  1 ,8 ,  1 , 12  ,  1 ,8 ,  1 , 12 ,  1 ,8 ,  1 , 12 ,  1 ,8 ,  1 , 12 ,  1 ,8      };   
 int numeroInstruccion = 0;
 
 unsigned long tiempoActual = 0;       // Cuando se alcance este tiempo, se ejecuta cierta parte del código.
