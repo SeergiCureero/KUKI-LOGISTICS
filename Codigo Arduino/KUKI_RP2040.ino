@@ -6,7 +6,7 @@ String msg;
 char dir;
 int vel = 35;
 
-//TODO definir pin input de selectorModoBLT , botonStartSecuencia Y numeroSecuencias
+
 #define selectorModoBLT 2
 bool COMSBLT = false;
 
@@ -14,24 +14,24 @@ bool COMSBLT = false;
 bool StartSecuencia = false;
 
 #define numeroSecuencias 4
-int Secuencias = 0; //numero de secuencias que hace
-int estatAnterior = LOW; // Almacena el estado anterior del botón
+int Secuencias = 0; // Número de secuencias que hace.
+int estatAnterior = LOW; // Almacena el estado anterior del botón.
 int estatActual = LOW;
 
 #define Luz_start 5
 #define Luz_blutuch 6
 
 char instrucciones[] =  {     'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' }; 
-float pasos[] =         { 1 , 12 ,  1 ,8 ,  1 , 12  ,  1 ,8 ,  1 , 12 ,  1 ,8 ,  1 , 12 ,  1 ,8 ,  1 , 12 ,  1 ,8      };   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
+float pasos[] =         { 1 , 12 ,  1 ,8 ,  1 , 12  ,  1 ,8 ,  1 , 12 ,  1 ,8 ,  1 , 12 ,  1 ,8 ,  1 , 12 ,  1 ,8      };   // El tiempo de la primera instrucción está en la posición 1, no en la 0. La 0 corresponde a los pasos de la última instrucción.
 int numeroInstruccion = 0;
 
-unsigned long tiempoActual = 0;       //cuando se alcance este tiempo se ejecuta cierta parte del codigo
-unsigned long tiempoAnterior = 0;     // Guardamos la ultima ejecucion
+unsigned long tiempoActual = 0;       // Cuando se alcance este tiempo, se ejecuta cierta parte del código.
+unsigned long tiempoAnterior = 0;     // Guardamos la última ejecución.
 const unsigned long intervalo = 100;  // 100 ms
 
 void prog(BLEDevice peripheral) {
-  // connect to the peripheral
-  Serial.println("Connecting ...");
+  // Connect to the peripheral.
+  Serial.println("Connecting...");
   if (peripheral.connect()) {
     Serial.println("Connected");
     
@@ -39,8 +39,8 @@ void prog(BLEDevice peripheral) {
     Serial.println("Failed to connect!");
     return;
   }
-  // discover peripheral attributes
-  Serial.println("Discovering attributes ...");
+  // Discover peripheral attributes.
+  Serial.println("Discovering attributes...");
   if (peripheral.discoverAttributes()) {
     Serial.println("Attributes discovered");
   } else {
@@ -48,7 +48,7 @@ void prog(BLEDevice peripheral) {
     peripheral.disconnect();
     return;
   }
-  // retrieve the LED characteristic
+  // Retrieve the LED characteristic.
   BLECharacteristic X = peripheral.characteristic("19b10001-e8f2-537e-4f6c-d104768a1214");
   BLECharacteristic Y = peripheral.characteristic("19b10002-e8f2-537e-4f6c-d104768a1214");
   BLECharacteristic Vel = peripheral.characteristic("19b10004-e8f2-537e-4f6c-d104768a1214");
@@ -68,18 +68,18 @@ void prog(BLEDevice peripheral) {
     return;
   }
   while (peripheral.connected()) {
-    // while the peripheral is connected
+    // While the peripheral is connected.
     if (X.canRead() && Y.canRead() &&  Vel.canRead()) {
       // Buffers para cada float (4 bytes)
       uint8_t bufX[4], bufY[4], bufVel[4];
 
-      // Leer los valores del periférico
+      // Leer los valores del periférico.
       X.readValue(bufX, 4);
       Y.readValue(bufY, 4);
 
       Vel.readValue(bufVel, 4);
 
-      // Convertir los bytes a floats
+      // Convertir los bytes a floats.
       float valX, valY, valVel;
       float threshold = 0.2;
       memcpy(&valX, bufX, sizeof(float));
@@ -87,7 +87,7 @@ void prog(BLEDevice peripheral) {
       memcpy(&valVel, bufVel, sizeof(float));
 
       vel = (int)valVel;  
-      // es para traducir los valores del accelorometro para sabar la direccion que hay que mandar
+      // Es para traducir los valores del acelerómetro para saber la dirección que hay que mandar.
        if (abs(valX) < threshold && abs(valY) < threshold) dir = 'n'; // centro
         else if (valX > threshold && valY > threshold) dir = 'h';      // arriba-derecha
         else if (valX > threshold && valY < -threshold) dir = 'b';     // arriba-izquierda
@@ -102,7 +102,7 @@ void prog(BLEDevice peripheral) {
 
 
     
-  // Si recibe datos del MEGA, los muestra en el PC
+  // Si recibe datos del MEGA, los muestra en el PC.
   
     msg = String(dir) + String(vel);
     Serial1.println(msg);
@@ -117,15 +117,14 @@ void prog(BLEDevice peripheral) {
 
 
 void setup() {
-  // Pin GPIO5 com a RX
-  // Pin GPIO4 com a TX
   
-  Serial1.begin(9600); // UART1: RX=5, TX=4 
+  
+  Serial1.begin(9600); 
   Serial.begin(9600); // Debug por puerto USB
-  // initialize the BLE hardware
+  // Initialize the BLE hardware.
   BLE.begin();
   Serial.println("KUKI");
-  // start scanning for Button Device BLE peripherals
+  // Start scanning for Button Device BLE peripherals.
   BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
   pinMode(selectorModoBLT, INPUT);
   pinMode(botonStartSecuencia, INPUT);
@@ -136,7 +135,7 @@ void setup() {
 
 void loop() {
 
-  //leemos el estado del selector de modo
+  // Leemos el estado del selector de modo.
   COMSBLT = digitalRead(selectorModoBLT);
 
   if (COMSBLT){
