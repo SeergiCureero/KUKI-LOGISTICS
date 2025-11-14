@@ -75,8 +75,7 @@ void loop() {
   a1023 -> adelante a toda velocidad
   f512 -> diagonal -- a mitad de velocidad
   00 -> parado, 0 velocidad
-  01023 -> parado, pero más veloz (XD)
-  */
+    */
 
   switch(msg[0]){
     case 'a':
