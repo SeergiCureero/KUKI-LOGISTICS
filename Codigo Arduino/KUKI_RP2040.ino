@@ -22,7 +22,7 @@ int estatActual = LOW;
 #define Luz_blutuch 6
 
 char instrucciones[] =  {     'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' }; 
-float pasos[] =         { 1 , 12.5 ,  1 ,8.6 ,  1 , 12.5  ,  1 ,8.6 ,  1 , 12.5 ,  1 ,8.6 ,  1 , 12.5 ,  1 ,8.6 ,  1 , 12.5 ,  1 ,8.6       };   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
+float pasos[] =         { 1 , 12 ,  1 ,8 ,  1 , 12  ,  1 ,8 ,  1 , 12 ,  1 ,8 ,  1 , 12 ,  1 ,8 ,  1 , 12 ,  1 ,8      };   //el tiempo de la primera instruccion esta en la posición 1, no en la 0. la 0 corresponde a los pasos de la ultima instruccion.
 int numeroInstruccion = 0;
 
 unsigned long tiempoActual = 0;       //cuando se alcance este tiempo se ejecuta cierta parte del codigo
