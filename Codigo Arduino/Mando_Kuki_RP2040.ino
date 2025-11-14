@@ -11,7 +11,7 @@ BLEFloatCharacteristic Vel("19B10004-E8F2-537E-4F6C-D104768A1214", BLERead | BLE
 void setup() {
   Serial.begin(9600);
   if (!BLE.begin()) {
-    Serial.println("starting Bluetooth® Low Energy failed!");
+    Serial.println("Starting Bluetooth® Low Energy failed!");
   }
   if (!IMU.begin()) {
     Serial.println("Failed to initialize IMU!");
