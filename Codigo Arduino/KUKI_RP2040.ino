@@ -153,15 +153,15 @@ void loop() {
   estatAnterior = estatActual;
   
 
-  //leemos el estado del boton de StartSecuencia
+  // Leemos el estado del botón de StartSecuencia.
   if (digitalRead(botonStartSecuencia)){
-    //inicia la secuencia
+    // Inicia la secuencia.
     StartSecuencia = true;
     Serial.println("a");
     if(Secuencias == 0){Secuencias = 1;}
   }
     
-  //REVISA SI EL NUMERO DE INSTRUCCIONES Y EL DE PASOS ES EL MISMO, SI NO, AVISA. El codigo se ejecutará bien y no dara error pero funcionará mal
+  // REVISA SI EL NÚMERO DE INSTRUCCIONES Y EL DE PASOS ES EL MISMO, SI NO, AVISA. El código se ejecutará bien y no dará error, pero funcionará mal.
   //(sizeof(instrucciones)/sizeof(instrucciones[0])) se divide el tamaño entero del array entre el tamaño del primer dato del array. sizeof() da el tamaño en bytes de TODO el array, pero el tamaño no indica el numero de elementos
   int sizeInstrucciones = sizeof(instrucciones)/sizeof(instrucciones[0]);
   int sizePasos = sizeof(pasos)/sizeof(pasos[0]);
@@ -174,10 +174,10 @@ void loop() {
     Serial.println(String(sizeInstrucciones)  + " > " +  String(sizePasos));
   }
 
-  // check if a peripheral has been discovered
+  // Check if a peripheral has been discovered.
   BLEDevice peripheral = BLE.available();
   if (peripheral && COMSBLT) {
-    // Encuentra un periférico, coloca la dirección, el nombre local y el servicio anunciado
+    // Encuentra un periférico, coloca la dirección, el nombre local y el servicio anunciado.
     Serial.print("Found ");
     Serial.print(peripheral.address());
     Serial.print(" '");
@@ -190,20 +190,20 @@ void loop() {
       Serial.println("Kuki no encontrado");
       return;  // If the name doesn't have "Button Device" in it then ignore it
     }
-    // stop scanning
+    // Stop scanning.
     BLE.stopScan();
     
     prog(peripheral);
     
     
-    // peripheral disconnected, start scanning again
+    // Peripheral disconnected, start scanning again.
     BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
   }
 
   else if (!COMSBLT){
-    //automatico, sin comunicacion
+    // Automático, sin comunicación.
     tiempoActual = millis();
-    //Compara si ha pasado el tiempo suficiente para ejecutar la instrucción actual.
+    // Compara si ha pasado el tiempo suficiente para ejecutar la instrucción actual.
     if ((tiempoActual - tiempoAnterior) >= (intervalo*pasos[numeroInstruccion])) {
       tiempoAnterior = tiempoActual;  // Actualiza el contador
       if (StartSecuencia){
@@ -214,7 +214,7 @@ void loop() {
         if(Secuencias > 0){
           
           Serial.println("hola");
-          //ejecuta la secuencia solo si StartSecuencia es true (si se ha pulsado el boton y aun no se ha acabado la secuencia)
+          // Ejecuta la secuencia solo si StartSecuencia es true (si se ha pulsado el botón y aún no se ha acabado la secuencia).
           Serial.println("Instruccion numero: " + String(numeroInstruccion) + " = " +  instrucciones[numeroInstruccion] + " | Vel:  " + vel);
           msg = instrucciones[numeroInstruccion] + String(vel);
           Serial1.println(msg);
