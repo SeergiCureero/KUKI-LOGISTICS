@@ -42,10 +42,10 @@ void loop() {
   /*
   // Envia mensaje al RP2040
   Serial1.println("Hola RP2040!");
-  // Si recibe datos del RP2040, los muestra en el PC
+  // Si recibe datos del RP2040, los muestra en el PC.
   */
 
-  //Lee mensajes enviados por KUKI_RP2040
+  // Lee mensajes enviados por KUKI_RP2040.
   if (Serial1.available()) {
     msg = Serial1.readStringUntil('\n');
     Serial.print("RP2040 dice: ");
@@ -56,7 +56,7 @@ void loop() {
 
   //MOVILIDAD
   /*
-  El mensaje que recibirá de la master sera un int con la dirección en la que se debe mover seguido de la velocidad. 
+  El mensaje que recibirá de la master será un int con la dirección en la que se debe mover, seguido de la velocidad. 
   Direcciones:
         a
       h | b
@@ -66,7 +66,7 @@ void loop() {
       f | d
         e
   
-  Además, se deberá considerar movimientos con puntos de giro fuera del centro del AGV (como los de un coche normal)
+  Además, se deberán considerar movimientos con puntos de giro fuera del centro del AGV (como los de un coche normal).
   - giro a izquierdas: i
   - giro a derechas: j
 
@@ -79,8 +79,8 @@ void loop() {
 
   switch(msg[0]){
     case 'a':
-      //adelante
-      //todos los motores se mueven adelante
+      // Adelante
+      // Todos los motores se mueven adelante.
       digitalWrite(motor1A, HIGH);
       digitalWrite(motor1B, LOW);
       digitalWrite(motor2A, HIGH);
@@ -91,7 +91,7 @@ void loop() {
       digitalWrite(motor4B, LOW);
       break;
     case 'b':
-      //diagonal ++
+      // Diagonal ++
       //2 y 3 adelante, 1 y 4 parados
       digitalWrite(motor1A, LOW);
       digitalWrite(motor1B, LOW);
@@ -103,8 +103,8 @@ void loop() {
       digitalWrite(motor4B, LOW);
       break;
     case 'c':
-      //hacia la derecha
-      //2 y 3 adelante, 1 y 4 atras
+      // Hacia la derecha
+      // 2 y 3 adelante, 1 y 4 atras
       digitalWrite(motor1A, LOW);
       digitalWrite(motor1B, HIGH);
       digitalWrite(motor2A, HIGH);
@@ -115,8 +115,8 @@ void loop() {
       digitalWrite(motor4B, HIGH);
       break;
     case 'd':
-      //diagonal +-
-      //1 y 4 atras, 2 y 3 parados
+      // Diagonal +-
+      // 1 y 4 atras, 2 y 3 parados
       digitalWrite(motor1A, LOW);
       digitalWrite(motor1B, HIGH);
       digitalWrite(motor2A, LOW);
@@ -127,7 +127,7 @@ void loop() {
       digitalWrite(motor4B, HIGH);
       break;
     case 'e':
-      //todos los motores se mueven atras
+      // Todos los motores se mueven atras.
       digitalWrite(motor1A, LOW);
       digitalWrite(motor1B, HIGH);
       digitalWrite(motor2A, LOW);
@@ -138,8 +138,8 @@ void loop() {
       digitalWrite(motor4B, HIGH);
       break;
     case 'f':
-      //diagonal --
-      //2 y 3 atras, 1 y 4 parados
+      // Diagonal --
+      // 2 y 3 atras, 1 y 4 parados
       digitalWrite(motor1A, LOW);
       digitalWrite(motor1B, LOW);
       digitalWrite(motor2A, LOW);
@@ -150,8 +150,8 @@ void loop() {
       digitalWrite(motor4B, LOW);
       break;
     case 'g':
-      //hacia la izquierda
-      //2 y 3 atras, 1 y 4 adelante
+      // Hacia la izquierda
+      // 2 y 3 atras, 1 y 4 adelante
       digitalWrite(motor1A, HIGH);
       digitalWrite(motor1B, LOW);
       digitalWrite(motor2A, LOW);
@@ -162,8 +162,8 @@ void loop() {
       digitalWrite(motor4B, LOW);
       break;
     case 'h':
-      //diagonal -+
-      //1 y 4 adelante, 2 y 3 parados
+      // Diagonal -+
+      // 1 y 4 adelante, 2 y 3 parados
       digitalWrite(motor1A, HIGH);
       digitalWrite(motor1B, LOW);
       digitalWrite(motor2A, LOW);
@@ -174,8 +174,8 @@ void loop() {
       digitalWrite(motor4B, LOW);
       break;
     case 'i':
-      //giro a izquierdas
-      //2 y 4 atras, 1 y 3 adelante
+      // Giro a izquierdas
+      // 2 y 4 atras, 1 y 3 adelante
       digitalWrite(motor1A, LOW);
       digitalWrite(motor1B, HIGH);
       digitalWrite(motor2A, HIGH);
@@ -186,8 +186,8 @@ void loop() {
       digitalWrite(motor4B, LOW);
       break;
     case 'j':
-      //giro a derechas
-      //1 y 3 adelante, 2 y 4 atras
+      // Giro a derechas
+      // 1 y 3 adelante, 2 y 4 atras
       digitalWrite(motor1A, LOW);
       digitalWrite(motor1B, HIGH);
       digitalWrite(motor2A, HIGH);
@@ -198,7 +198,7 @@ void loop() {
       digitalWrite(motor4B, HIGH);
       break;
     default:
-      //apaga motores
+      // Apaga motores
       digitalWrite(motor1A, LOW);
       digitalWrite(motor1B, LOW);
       digitalWrite(motor2A, LOW);
@@ -209,7 +209,7 @@ void loop() {
       digitalWrite(motor4B, LOW);
       break;
   }
-  //lee el resto del string (a partir del char con indice 1) y asocialo a la velocidad dentro de unos valores aptos (mapeado)
+  // Lee el resto del string (a partir del char con índice 1) y asócialo a la velocidad dentro de unos valores aptos (mapeado).
   vel = map(msg.substring(1).toInt(), 0, 1023, 0, 255);
   analogWrite(motor1Vel, vel);
   analogWrite(motor2Vel, vel);
