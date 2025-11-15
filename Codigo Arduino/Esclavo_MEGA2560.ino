@@ -51,7 +51,7 @@ void loop() {
     Serial.print("RP2040 dice: ");
     Serial.println(msg);
   }
-  delay(1000);
+
   
 
   //MOVILIDAD
