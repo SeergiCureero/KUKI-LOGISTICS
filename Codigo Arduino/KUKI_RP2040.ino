@@ -163,7 +163,8 @@ void loop() {
   }
     
   // REVISA SI EL NÚMERO DE INSTRUCCIONES Y EL DE PASOS ES EL MISMO, SI NO, AVISA. El código se ejecutará bien y no dará error, pero funcionará mal.
-  //(sizeof(instrucciones)/sizeof(instrucciones[0])) se divide el tamaño entero del array entre el tamaño del primer dato del array. sizeof() da el tamaño en bytes de TODO el array, pero el tamaño no indica el numero de elementos
+  //(sizeof(instrucciones)/sizeof(instrucciones[0])) se divide el tamaño entero del array entre el tamaño del primer dato del array. sizeof() 
+  //da el tamaño en bytes de TODO el array, pero el tamaño no indica el numero de elementos
   int sizeInstrucciones = sizeof(instrucciones)/sizeof(instrucciones[0]);
   int sizePasos = sizeof(pasos)/sizeof(pasos[0]);
   if(sizeInstrucciones < sizePasos){
