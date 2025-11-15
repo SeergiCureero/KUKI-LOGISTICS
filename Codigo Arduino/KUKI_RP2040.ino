@@ -215,7 +215,6 @@ void loop() {
         
         if(Secuencias > 0){
           
-          Serial.println("hola");
           // Ejecuta la secuencia solo si StartSecuencia es true (si se ha pulsado el botón y aún no se ha acabado la secuencia).
           Serial.println("Instrucción número: " + String(numeroInstruccion) + " = " +  instrucciones[numeroInstruccion] + " | Vel:  " + vel);
           msg = instrucciones[numeroInstruccion] + String(vel);
