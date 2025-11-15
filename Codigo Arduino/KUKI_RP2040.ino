@@ -22,7 +22,7 @@ int estatActual = LOW;
 #define Luz_blutuch 6
 
 // El tiempo de la primera instrucción está en la posición 1, no en la 0. La 0 corresponde a los pasos de la última instrucción.
-char instrucciones[] =  {     'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' }; 
+char instrucciones[] =  {     'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n', 'a', 'n', 'j', 'n' };    //(recto, para, gira, para) x5 
 float pasos[] =         { 1 , 12 ,  1 ,8 ,  1 , 12  ,  1 ,8 ,  1 , 12 ,  1 ,8 ,  1 , 12 ,  1 ,8 ,  1 , 12 ,  1 ,8      };   
 int numeroInstruccion = 0;
 
@@ -32,20 +32,20 @@ const unsigned long intervalo = 100;  // 100 ms
 
 void prog(BLEDevice peripheral) {
   // Connect to the peripheral.
-  Serial.println("Connecting...");
+  Serial.println("Conectando...");
   if (peripheral.connect()) {
-    Serial.println("Connected");
+    Serial.println("Conectado :D");
     
   } else {
-    Serial.println("Failed to connect!");
+    Serial.println("FALLO al conectarse!");
     return;
   }
   // Discover peripheral attributes.
-  Serial.println("Discovering attributes...");
+  Serial.println("Descubriendo atributos...");
   if (peripheral.discoverAttributes()) {
-    Serial.println("Attributes discovered");
+    Serial.println("Atributos descubiertos");
   } else {
-    Serial.println("Attribute discovery failed!");
+    Serial.println("Descubrimiento de atributos FALLIDO!");
     peripheral.disconnect();
     return;
   }
@@ -54,17 +54,17 @@ void prog(BLEDevice peripheral) {
   BLECharacteristic Y = peripheral.characteristic("19b10002-e8f2-537e-4f6c-d104768a1214");
   BLECharacteristic Vel = peripheral.characteristic("19b10004-e8f2-537e-4f6c-d104768a1214");
   if (!X) {
-    Serial.println("Peripheral does not have LED characteristic!");
+    Serial.println("Periferico no tiene la característica 'X!'");
     peripheral.disconnect();
     return;
   }
   if (!Y) {
-    Serial.println("Peripheral does not have LED characteristic!");
+    Serial.println("Periferico no tiene la característica 'Y!'");
     peripheral.disconnect();
     return;
   }
   if (!Vel) {
-    Serial.println("Peripheral does not have LED characteristic!");
+    Serial.println("Periferico no tiene la característica 'velocidad!'");
     peripheral.disconnect();
     return;
   }
@@ -113,7 +113,7 @@ void prog(BLEDevice peripheral) {
     delay(100);
 
   }
-  Serial.println("Peripheral disconnected");
+  Serial.println("Periferico Desconectado");
 }
 
 
@@ -158,8 +158,8 @@ void loop() {
   if (digitalRead(botonStartSecuencia)){
     // Inicia la secuencia.
     StartSecuencia = true;
-    Serial.println("a");
-    if(Secuencias == 0){Secuencias = 1;}
+    //Serial.println("a");
+    //if(Secuencias == 0){Secuencias = 1;}
   }
     
   // REVISA SI EL NÚMERO DE INSTRUCCIONES Y EL DE PASOS ES EL MISMO, SI NO, AVISA. El código se ejecutará bien y no dará error, pero funcionará mal.
@@ -217,7 +217,7 @@ void loop() {
           
           Serial.println("hola");
           // Ejecuta la secuencia solo si StartSecuencia es true (si se ha pulsado el botón y aún no se ha acabado la secuencia).
-          Serial.println("Instruccion numero: " + String(numeroInstruccion) + " = " +  instrucciones[numeroInstruccion] + " | Vel:  " + vel);
+          Serial.println("Instrucción número: " + String(numeroInstruccion) + " = " +  instrucciones[numeroInstruccion] + " | Vel:  " + vel);
           msg = instrucciones[numeroInstruccion] + String(vel);
           Serial1.println(msg);
 
