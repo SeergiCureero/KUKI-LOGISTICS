@@ -1,0 +1,19 @@
+const int pinDigital = 2;
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(pinDigital, INPUT_PULLUP);
+
+}
+
+void loop() {
+  int estado = digitalRead(pinDigital);
+
+  if (estado) {
+    Serial.println("ON");   // Detecta imán
+  } else {
+    Serial.println("OFF");  // No detecta
+  }
+
+  delay(200);
+}
