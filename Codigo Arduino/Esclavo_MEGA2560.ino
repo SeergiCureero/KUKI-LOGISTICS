@@ -2,6 +2,7 @@
 #include <SPI.h>      //RFID
 #include <MFRC522.h>  //RFID
 #include <Servo.h>    //SERVO
+#include <NewPing.h>
 
 // VARIABLES GENERALES
 String msg;
@@ -32,9 +33,14 @@ byte Sergi[4] = {0x93, 0x3D, 0x6F, 0x19};
 byte Chema[4] = {0x1C, 0x02, 0x10, 0x39};
 
 // VARIABLES SENSOR ULTRASONICO 
+#define TRIGGER_PIN  22
+#define ECHO_PIN     23
+#define MAX_DISTANCE 200  // distancia maxima en cm
+unsigned int distancia;           // distancia leída 
+bool paradaEmergencia = false;
+NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
 
-
-// VARIABLES SERVO
+// VARIABLES SERVO (pin PWM 45)
 Servo servoUltrasonico;
 
 
@@ -63,18 +69,23 @@ void setup() {
   Serial.println("Lectura del UID");
 
   //SERVO
-  servoUltrasonico.attach(44);   // Pin de señal del servo
+  servoUltrasonico.attach(45);   // Pin de señal del servo
 }
 void loop() {
-  /*
-  // Envia mensaje al RP2040
-  Serial1.println("Hola RP2040!");
-  // Si recibe datos del RP2040, los muestra en el PC.
-  */
 
+  /*
+  //comentar para debug
   // Lee mensajes enviados por KUKI_RP2040.
   if (Serial1.available()) {
     msg = Serial1.readStringUntil('\n');
+    Serial.print("RP2040 dice: ");
+    Serial.println(msg);
+  }*/
+
+  //descomentar para debug
+  // Lee mensajes enviados por KUKI_RP2040.
+  if (Serial.available()) {
+    msg = Serial.readStringUntil('\n');
     Serial.print("RP2040 dice: ");
     Serial.println(msg);
   }
@@ -108,7 +119,38 @@ void loop() {
     }
   }
 
-
+  distancia = sonar.ping_cm();
+  if (distancia > 0) {
+    Serial.print("Distancia: ");
+    Serial.print(distancia);
+    Serial.println(" cm");
+    if(distancia <= 5){
+      paradaEmergencia = true;
+      Serial.println("OBJETO EN TRAYECTORIA");
+      Serial.println("PARANDO KUKI");
+    }
+    else{
+      if(paradaEmergencia){
+        //si se ha parado y ya no se detectan objetos en la trayectoria, esperar 1s y resetear variable
+        delay(1000);
+        paradaEmergencia = false;
+      }
+      else{
+        paradaEmergencia = false;
+      }
+    }
+  } 
+  else {
+    Serial.println("Ningún objecto detectado");
+    if(paradaEmergencia){
+      //si se ha parado y ya no se detectan objetos en la trayectoria, esperar 1s y resetear variable
+      delay(1000);
+      paradaEmergencia = false;
+    }
+    else{
+      paradaEmergencia = false;
+    }
+  }
       
   
 
@@ -135,135 +177,183 @@ void loop() {
   00 -> parado, 0 velocidad
     */
 
+  /*
+  Usamos un if dentro de cada caso porque queremos seguir siendo capaces de mover el servo 
+  aun que esté en parada de emergencia para poder comprovar si el siguiente movimineto es factible.
+  En un futuro hay que mover los bloques de los motores a funciones diferentes (idk)
+  */
+
+  if(paradaEmergencia){
+    digitalWrite(motor1A, LOW);
+    digitalWrite(motor1B, LOW);
+    digitalWrite(motor2A, LOW);
+    digitalWrite(motor2B, LOW);
+    digitalWrite(motor3A, LOW);
+    digitalWrite(motor3B, LOW);
+    digitalWrite(motor4A, LOW);
+    digitalWrite(motor4B, LOW);
+  }
+
   switch(msg[0]){
     case 'a':
       // Adelante
       // Todos los motores se mueven adelante.
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
       servoUltrasonico.write(90);
+      if(!paradaEmergencia){
+        digitalWrite(motor1A, HIGH);
+        digitalWrite(motor1B, LOW);
+        digitalWrite(motor2A, HIGH);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, HIGH);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, HIGH);
+        digitalWrite(motor4B, LOW);
+        Serial.println("Adelante");
+      }
       break;
     case 'b':
       // Diagonal ++
       //2 y 3 adelante, 1 y 4 parados
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
       servoUltrasonico.write(135);
+      if(!paradaEmergencia){
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, LOW);
+        digitalWrite(motor2A, HIGH);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, HIGH);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, LOW);
+        digitalWrite(motor4B, LOW);
+        Serial.println("Diagonal ++");
+      }
       break;
     case 'c':
       // Hacia la derecha
       // 2 y 3 adelante, 1 y 4 atras
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, HIGH);
       servoUltrasonico.write(180);
+      if(!paradaEmergencia){
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, HIGH);
+        digitalWrite(motor2A, HIGH);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, HIGH);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, LOW);
+        digitalWrite(motor4B, HIGH);
+        Serial.println("Derecha");
+      }
       break;
     case 'd':
       // Diagonal +-
       // 1 y 4 atras, 2 y 3 parados
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, HIGH);
+      if(!paradaEmergencia){
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, HIGH);
+        digitalWrite(motor2A, LOW);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, LOW);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, LOW);
+        digitalWrite(motor4B, HIGH);
+        Serial.println("Diagonal +-");
+      }
       break;
     case 'e':
       // Todos los motores se mueven atras.
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, HIGH);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, HIGH);
+      if(!paradaEmergencia){
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, HIGH);
+        digitalWrite(motor2A, LOW);
+        digitalWrite(motor2B, HIGH);
+        digitalWrite(motor3A, LOW);
+        digitalWrite(motor3B, HIGH);
+        digitalWrite(motor4A, LOW);
+        digitalWrite(motor4B, HIGH);
+        Serial.println("Atras");
+      }
       break;
     case 'f':
       // Diagonal --
       // 2 y 3 atras, 1 y 4 parados
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, HIGH);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
+      if(!paradaEmergencia){
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, LOW);
+        digitalWrite(motor2A, LOW);
+        digitalWrite(motor2B, HIGH);
+        digitalWrite(motor3A, LOW);
+        digitalWrite(motor3B, HIGH);
+        digitalWrite(motor4A, LOW);
+        digitalWrite(motor4B, LOW);
+        Serial.println("Diagonal --");
+      }
       break;
     case 'g':
       // Hacia la izquierda
       // 2 y 3 atras, 1 y 4 adelante
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, HIGH);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
       servoUltrasonico.write(0);
+      if(!paradaEmergencia){
+        digitalWrite(motor1A, HIGH);
+        digitalWrite(motor1B, LOW);
+        digitalWrite(motor2A, LOW);
+        digitalWrite(motor2B, HIGH);
+        digitalWrite(motor3A, LOW);
+        digitalWrite(motor3B, HIGH);
+        digitalWrite(motor4A, HIGH);
+        digitalWrite(motor4B, LOW);
+        Serial.println("Izquierda");
+      }
       break;
     case 'h':
       // Diagonal -+
       // 1 y 4 adelante, 2 y 3 parados
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
       servoUltrasonico.write(45);
+      if(!paradaEmergencia){
+        digitalWrite(motor1A, HIGH);
+        digitalWrite(motor1B, LOW);
+        digitalWrite(motor2A, LOW);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, LOW);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, HIGH);
+        digitalWrite(motor4B, LOW);
+        Serial.println("Diagonal -+");
+      }
       break;
     case 'i':
       // Giro a izquierdas
       // 2 y 4 atras, 1 y 3 adelante
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
       servoUltrasonico.write(45);
+      if(!paradaEmergencia){
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, HIGH);
+        digitalWrite(motor2A, HIGH);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, LOW);
+        digitalWrite(motor3B, HIGH);
+        digitalWrite(motor4A, HIGH);
+        digitalWrite(motor4B, LOW);
+        Serial.println("Giro a Izquierdas");
+      }
       break;
     case 'j':
       // Giro a derechas
       // 1 y 3 adelante, 2 y 4 atras
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, HIGH);
       servoUltrasonico.write(135);
+      if(!paradaEmergencia){
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, HIGH);
+        digitalWrite(motor2A, HIGH);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, HIGH);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, LOW);
+        digitalWrite(motor4B, HIGH);
+        Serial.println("Giro a Derechas");
+      }
       break;
     default:
       // Apaga motores
+      servoUltrasonico.write(90);
       digitalWrite(motor1A, LOW);
       digitalWrite(motor1B, LOW);
       digitalWrite(motor2A, LOW);
@@ -272,9 +362,11 @@ void loop() {
       digitalWrite(motor3B, LOW);
       digitalWrite(motor4A, LOW);
       digitalWrite(motor4B, LOW);
-      servoUltrasonico.write(90);
+      Serial.println("Motores Apagados");
       break;
   }
+  
+  
   // Lee el resto del string (a partir del char con índice 1) y asócialo a la velocidad dentro de unos valores aptos (mapeado).
   vel = map(msg.substring(1).toInt(), 0, 1023, 0, 255);
   analogWrite(motor1Vel, vel);
