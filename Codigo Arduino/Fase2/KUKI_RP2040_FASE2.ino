@@ -90,6 +90,28 @@ void prog(BLEDevice peripheral) {
   Serial.println("Periferico Desconectado");
 }
 
+void lecturaSensor(char direccion[5]) {
+
+  //crea una variable de pines
+  const uint8_t pins[5] = {
+    PinSensor1, PinSensor2, PinSensor3, PinSensor4, PinSensor5
+  };
+  //lee del array de pines los estados de estos y los asocia a el indice de la variable dada, editandola asi.
+  for (int i = 0; i < 5; i++) {
+    direccion[i] = digitalRead(pins[i]);
+  }
+
+  //imprime por pantalla el resultado para debug
+  for (int i = 0; i < 5; i++) {
+    Serial.print("S");
+    Serial.print(i + 1);
+    Serial.print(": ");
+    Serial.print(direccion[i] == HIGH ? "IMAN" : "NO");
+    if (i < 4) Serial.print(" | ");
+  }
+  Serial.println();
+}
+
 void setup() {
   Serial1.begin(9600);
   Serial.begin(9600);
@@ -141,18 +163,41 @@ void loop() {
     BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
   }
   else if (!COMSBLT) {
-    int estado1 = digitalRead(PinSensor1);
-    int estado2 = digitalRead(PinSensor2);
-    int estado3 = digitalRead(PinSensor3);
-    int estado4 = digitalRead(PinSensor4);
-    int estado5 = digitalRead(PinSensor5);
 
-    Serial.print("S1: "); Serial.print(estado1 == HIGH ? "IMAN" : "NO");
-    Serial.print(" | S2: "); Serial.print(estado2 == HIGH ? "IMAN" : "NO");
-    Serial.print(" | S3: "); Serial.print(estado3 == HIGH ? "IMAN" : "NO");
-    Serial.print(" | S4: "); Serial.print(estado4 == HIGH ? "IMAN" : "NO");
-    Serial.print(" | S5: "); Serial.println(estado5 == HIGH ? "IMAN" : "NO");
+    //lee los sensores reed y danos una dirección
+    char direccion[5];
+    lecturaSensor(direccion);
 
-    delay(200);
+    for (int i = 0; i < 5; i++)
+    {
+      if (direccion[i] == HIGH)
+      {
+        switch (i)
+        {
+        case 0:
+          Serial.println("c");
+          break;
+        case 1:
+          Serial.println("b");
+          break;
+        case 2:
+          Serial.println("a");
+          break;
+        case 3:
+          Serial.println("g");
+          break;
+        case 4:
+          Serial.println("h");
+          break;
+        
+        default:
+          Serial.println("n");
+          break;
+        }
+        
+      }
+      
+    }
+    
   }
 }
