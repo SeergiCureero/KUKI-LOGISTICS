@@ -90,7 +90,8 @@ void prog(BLEDevice peripheral) {
   Serial.println("Periferico Desconectado");
 }
 
-void lecturaSensor(char direccion[5]) {
+char lecturaSensor() {
+  char direccion;
 
   //crea una variable de pines
   const uint8_t pins[5] = {
@@ -98,9 +99,36 @@ void lecturaSensor(char direccion[5]) {
   };
   //lee del array de pines los estados de estos y los asocia a el indice de la variable dada, editandola asi.
   for (int i = 0; i < 5; i++) {
-    direccion[i] = digitalRead(pins[i]);
+    if (pins[i] == HIGH)
+      {
+        switch (i)
+        {
+        case 0:
+          direccion = 'g';
+          break;
+        case 1:
+          direccion = 'h';
+          break;
+        case 2:
+          direccion = 'a';
+          break;
+        case 3:
+          direccion = 'b';
+          break;
+        case 4:
+          direccion = 'c';
+          break;
+        
+        default:
+          direccion = 'n';
+          break;
+        }
+        
+      }
+    return(direccion);
   }
 
+  /*
   //imprime por pantalla el resultado para debug
   for (int i = 0; i < 5; i++) {
     Serial.print("S");
@@ -110,6 +138,7 @@ void lecturaSensor(char direccion[5]) {
     if (i < 4) Serial.print(" | ");
   }
   Serial.println();
+  */
 }
 
 void setup() {
@@ -165,39 +194,9 @@ void loop() {
   else if (!COMSBLT) {
 
     //lee los sensores reed y danos una dirección
-    char direccion[5];
-    lecturaSensor(direccion);
-
-    for (int i = 0; i < 5; i++)
-    {
-      if (direccion[i] == HIGH)
-      {
-        switch (i)
-        {
-        case 0:
-          Serial.println("c");
-          break;
-        case 1:
-          Serial.println("b");
-          break;
-        case 2:
-          Serial.println("a");
-          break;
-        case 3:
-          Serial.println("g");
-          break;
-        case 4:
-          Serial.println("h");
-          break;
-        
-        default:
-          Serial.println("n");
-          break;
-        }
-        
-      }
-      
-    }
+    char direccion = lecturaSensor();
+    Serial.println(direccion);
+    delay(500);
     
   }
 }
