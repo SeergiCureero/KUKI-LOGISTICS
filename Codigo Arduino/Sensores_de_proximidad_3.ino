@@ -1,6 +1,6 @@
-const int trigPins[3] = {2, 4, 6};
-const int echoPins[3] = {3, 5, 7};
-const int ledPins[3] = {9, 10, 11};
+const int trigPins[3] = {22, 24, 26};
+const int echoPins[3] = {23, 25, 27};
+const int ledPins[3] = {34, 33, 32};
 
 int distancias[3];
 unsigned long tiempoAnterior[3] = {0, 0, 0};
