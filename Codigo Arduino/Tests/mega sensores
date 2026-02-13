@@ -128,17 +128,18 @@ void prog(BLEDevice peripheral) {
 // ================= SENSORES =================
 
 char lecturaSensor() {
-  char direccion = 'n';
+  static char ultimaDirValida = 'z';
+  static unsigned long tUltimaDeteccion = 0;
+
+  char direccion = 'z';
 
   bool sensor1 = digitalRead(PinSensor1);     
   bool sensor2 = digitalRead(PinSensor2);     
   bool sensor3 = digitalRead(PinSensor3);     
   bool sensor4 = digitalRead(PinSensor4);     
-  bool sensor5 = digitalRead(PinSensor5);     
+  bool sensor5 = digitalRead(PinSensor5);
 
-
-//full / más / izq / poco / recto / ...
-//k l m n o p q r s
+  // ---- Decide dirección según sensores ----
   if(sensor1 && sensor2){
     Serial.print("más izquierda");
     direccion = 'l';
@@ -175,13 +176,28 @@ char lecturaSensor() {
     Serial.print("full derecha");
     direccion = 's';
   }
-  else{
-    if(millis() >= tiempoActual + tiempoPeriodo){
-      tiempoActual = millis();
+  else {
+    // No detecta nada
+    unsigned long ahora = millis();
+
+    // Si aún no han pasado 2s desde la última detección, mantenemos la última dirección
+    if (ahora - tUltimaDeteccion < 2000) {
+      direccion = ultimaDirValida;
+    } else {
       Serial.print("z");
       direccion = 'z';
-    }  
+    }
+
+    return direccion; // salimos ya
   }
+
+  // Si ha detectado algo (no entra al else), guardamos como última dirección válida y reiniciamos timer
+  ultimaDirValida = direccion;
+  tUltimaDeteccion = millis();
+
+  return direccion;
+}
+
 
 
 
