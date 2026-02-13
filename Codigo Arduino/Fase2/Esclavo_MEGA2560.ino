@@ -25,13 +25,6 @@ int vel;
 #define RST_PIN 48
 #define SS_PIN 53
 MFRC522 mfrc522(SS_PIN, RST_PIN);
-  //TARJETAS CONOCIDAS
-byte Valle[4] = {0x13, 0xDD, 0x73, 0x19};
-byte Diego[4] = {0x53, 0x98, 0x69, 0x19};
-byte Sergi[4] = {0x93, 0x3D, 0x6F, 0x19};
-byte Chema[4] = {0x1C, 0x02, 0x10, 0x39};
-  //CAMINO
-int camino = 0;
 
 // VARIABLES SENSOR ULTRASONICO 
 #define TRIGGER_PIN  22
@@ -40,6 +33,22 @@ int camino = 0;
 unsigned int distancia;           // distancia leída 
 bool paradaEmergencia = false;
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
+
+// ZONAS
+enum Zona {
+  ZONA_1,
+  ZONA_2,
+  ZONA_3
+};
+
+
+Zona zonaActual = ZONA_1;
+
+unsigned long ultimoEnvio = 0;
+const unsigned long intervaloRFID = 200;   // tiempo mínimo entre lecturas
+bool tarjetaDetectada = false;
+
+
 
 void moveKUKI(char direccion, bool parada, int vel){
     //MOVILIDAD
@@ -77,7 +86,7 @@ void moveKUKI(char direccion, bool parada, int vel){
           digitalWrite(motor3B, LOW);
           digitalWrite(motor4A, HIGH);
           digitalWrite(motor4B, LOW);
-          Serial.println("Adelante");
+          //Serial.println("Adelante");
         break;
         case 'b':
           // Diagonal ++
@@ -90,7 +99,7 @@ void moveKUKI(char direccion, bool parada, int vel){
           digitalWrite(motor3B, LOW);
           digitalWrite(motor4A, LOW);
           digitalWrite(motor4B, LOW);
-          Serial.println("Diagonal ++");
+          //Serial.println("Diagonal ++");
         break;
         case 'c':
           // Hacia la derecha
@@ -103,7 +112,7 @@ void moveKUKI(char direccion, bool parada, int vel){
           digitalWrite(motor3B, LOW);
           digitalWrite(motor4A, LOW);
           digitalWrite(motor4B, HIGH);
-          Serial.println("Derecha");
+          //Serial.println("Derecha");
         break;
         case 'd':
           // Diagonal +-
@@ -116,7 +125,7 @@ void moveKUKI(char direccion, bool parada, int vel){
           digitalWrite(motor3B, LOW);
           digitalWrite(motor4A, LOW);
           digitalWrite(motor4B, HIGH);
-          Serial.println("Diagonal +-");
+          //Serial.println("Diagonal +-");
         break;
         case 'e':
           // Todos los motores se mueven atras.
@@ -128,7 +137,7 @@ void moveKUKI(char direccion, bool parada, int vel){
           digitalWrite(motor3B, HIGH);
           digitalWrite(motor4A, LOW);
           digitalWrite(motor4B, HIGH);
-          Serial.println("Atras");
+          //Serial.println("Atras");
         break;
         case 'f':
           // Diagonal --
@@ -141,7 +150,7 @@ void moveKUKI(char direccion, bool parada, int vel){
           digitalWrite(motor3B, HIGH);
           digitalWrite(motor4A, LOW);
           digitalWrite(motor4B, LOW);
-          Serial.println("Diagonal --");
+          //Serial.println("Diagonal --");
         break;
         case 'g':
         // Hacia la izquierda
@@ -154,7 +163,7 @@ void moveKUKI(char direccion, bool parada, int vel){
           digitalWrite(motor3B, HIGH);
           digitalWrite(motor4A, HIGH);
           digitalWrite(motor4B, LOW);
-          Serial.println("Izquierda");
+          //Serial.println("Izquierda");
         break;
         case 'h':
           // Diagonal -+
@@ -167,7 +176,7 @@ void moveKUKI(char direccion, bool parada, int vel){
           digitalWrite(motor3B, LOW);
           digitalWrite(motor4A, HIGH);
           digitalWrite(motor4B, LOW);
-          Serial.println("Diagonal -+");
+          //Serial.println("Diagonal -+");
         break;
         case 'i':
           // Giro a izquierdas
@@ -180,7 +189,7 @@ void moveKUKI(char direccion, bool parada, int vel){
           digitalWrite(motor3B, HIGH);
           digitalWrite(motor4A, HIGH);
           digitalWrite(motor4B, LOW);
-          Serial.println("Giro a Izquierdas");
+          //Serial.println("Giro a Izquierdas");
         break;
         case 'j':
           // Giro a derechas
@@ -193,8 +202,129 @@ void moveKUKI(char direccion, bool parada, int vel){
           digitalWrite(motor3B, LOW);
           digitalWrite(motor4A, LOW);
           digitalWrite(motor4B, HIGH);
-          Serial.println("Giro a Derechas");
+          //Serial.println("Giro a Derechas");
         break;
+        
+        
+        // Giros petit
+        case 'k':
+          // Full Izquierda
+          // MI al contrario, MD full
+          digitalWrite(motor1A, HIGH);
+          digitalWrite(motor1B, LOW);
+          digitalWrite(motor2A, LOW);
+          digitalWrite(motor2B, HIGH);
+          digitalWrite(motor3A, HIGH);
+          digitalWrite(motor3B, LOW);
+          digitalWrite(motor4A, LOW);
+          digitalWrite(motor4B, HIGH);
+          //Serial.println("Full Izquierda");
+        break;
+        case 'l':
+          // Más Izquierda
+          // MI a 0, MD Full
+          digitalWrite(motor1A, HIGH);
+          digitalWrite(motor1B, LOW);
+          digitalWrite(motor2A, LOW);
+          digitalWrite(motor2B, LOW);
+          digitalWrite(motor3A, HIGH);
+          digitalWrite(motor3B, LOW);
+          digitalWrite(motor4A, LOW);
+          digitalWrite(motor4B, LOW);
+          //Serial.println("Más Izqueirda");
+        break;
+        case 'm':
+          // Izquierda
+          // MI 25%, MD Full
+          digitalWrite(motor1A, HIGH);
+          digitalWrite(motor1B, LOW);
+          digitalWrite(motor2A, 64);
+          digitalWrite(motor2B, 0);
+          digitalWrite(motor3A, HIGH);
+          digitalWrite(motor3B, LOW);
+          digitalWrite(motor4A, 64);
+          digitalWrite(motor4B, 0);
+          //Serial.println("Izquierda");
+        break;
+        case 'n':
+          // Poco Izquierda
+          // MI 50%, MD Full
+          digitalWrite(motor1A, HIGH);
+          digitalWrite(motor1B, LOW);
+          digitalWrite(motor2A, 128);
+          digitalWrite(motor2B, 0);
+          digitalWrite(motor3A, HIGH);
+          digitalWrite(motor3B, LOW);
+          digitalWrite(motor4A, 128);
+          digitalWrite(motor4B, 0);
+          //Serial.println("Poco Izquierda");
+        break;
+        case 'o':
+          // Adelante
+          // Todos los motores se mueven adelante.
+          digitalWrite(motor1A, HIGH);
+          digitalWrite(motor1B, LOW);
+          digitalWrite(motor2A, HIGH);
+          digitalWrite(motor2B, LOW);
+          digitalWrite(motor3A, HIGH);
+          digitalWrite(motor3B, LOW);
+          digitalWrite(motor4A, HIGH);
+          digitalWrite(motor4B, LOW);
+          //Serial.println("Adelante");
+        break;
+        case 'p':
+          // Poco Derecha
+          // MI Full, MD 50%
+          digitalWrite(motor1A, 128);
+          digitalWrite(motor1B, 0);
+          digitalWrite(motor2A, HIGH);
+          digitalWrite(motor2B, LOW);
+          digitalWrite(motor3A, 128);
+          digitalWrite(motor3B, 0);
+          digitalWrite(motor4A, HIGH);
+          digitalWrite(motor4B, LOW);
+          //Serial.println("Poco Derecha");
+        break;
+        case 'q':
+          // Derecha
+          // MI Full, MD 25%
+          digitalWrite(motor1A, 64);
+          digitalWrite(motor1B, 0);
+          digitalWrite(motor2A, HIGH);
+          digitalWrite(motor2B, LOW);
+          digitalWrite(motor3A, 64);
+          digitalWrite(motor3B, 0);
+          digitalWrite(motor4A, HIGH);
+          digitalWrite(motor4B, LOW);
+          //Serial.println("Derecha");
+        break;
+        case 'r':
+          // Más Derecha
+          // MI Full, MD 0
+          digitalWrite(motor1A, LOW);
+          digitalWrite(motor1B, LOW);
+          digitalWrite(motor2A, HIGH);
+          digitalWrite(motor2B, LOW);
+          digitalWrite(motor3A, LOW);
+          digitalWrite(motor3B, LOW);
+          digitalWrite(motor4A, HIGH);
+          digitalWrite(motor4B, LOW);
+          //Serial.println("Más Derecha");
+        break;
+        case 's':
+          // Full Derecha
+          // MI Full, MD al contrario
+          digitalWrite(motor1A, LOW);
+          digitalWrite(motor1B, HIGH);
+          digitalWrite(motor2A, HIGH);
+          digitalWrite(motor2B, LOW);
+          digitalWrite(motor3A, LOW);
+          digitalWrite(motor3B, HIGH);
+          digitalWrite(motor4A, HIGH);
+          digitalWrite(motor4B, LOW);
+          //Serial.println("Full Derecha");
+        break;
+
         default:
           // Apaga motores
           digitalWrite(motor1A, LOW);
@@ -205,7 +335,7 @@ void moveKUKI(char direccion, bool parada, int vel){
           digitalWrite(motor3B, LOW);
           digitalWrite(motor4A, LOW);
           digitalWrite(motor4B, LOW);
-          Serial.println("Motores Apagados");
+          //Serial.println("Motores Apagados");
         break;
     }
 
@@ -225,7 +355,7 @@ void moveKUKI(char direccion, bool parada, int vel){
     }
 }
 
-
+/*
 void ultraSonidos(){
     //Ultrasonidos (US) y gestión de la parada de emergencia
     distancia = sonar.ping_cm();
@@ -255,44 +385,85 @@ void ultraSonidos(){
         paradaEmergencia = false;
     }
 }
+*/
 
+void RFID() {
 
-int RFID(){
-  //RFID
-  if (mfrc522.PICC_IsNewCardPresent()) {
-    if (mfrc522.PICC_ReadCardSerial()) {
-      
-      for (byte i = 0; i < mfrc522.uid.size; i++) {
-        Serial.print(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
-        Serial.print(mfrc522.uid.uidByte[i], HEX);
-      }
+  if (millis() - ultimoEnvio < intervaloRFID) return;
 
-      
-      if (memcmp(mfrc522.uid.uidByte, Diego, mfrc522.uid.size) == 0) {
-        Serial.println("Diego");
-        return(1);
-      }
-      else if (memcmp(mfrc522.uid.uidByte, Valle, mfrc522.uid.size) == 0) {
-        Serial.println("Valle");
-        return(2);
-      }
-      else if (memcmp(mfrc522.uid.uidByte, Sergi, mfrc522.uid.size) == 0) {
-        Serial.println("Sergi");
-        return(3);
-      }
-      else if (memcmp(mfrc522.uid.uidByte, Chema, mfrc522.uid.size) == 0) {
-        Serial.println("Chema");
-        return(4);
-      }
-      else {
-        Serial.println("Desconocido");
-        return(0);
-      }
-
-      mfrc522.PICC_HaltA();
-    }
+  if (!mfrc522.PICC_IsNewCardPresent()) {
+    tarjetaDetectada = false;
+    return;
   }
+
+  if (!mfrc522.PICC_ReadCardSerial()) return;
+
+  byte bloque;
+  byte posicion;
+
+  switch (zonaActual) {
+    case ZONA_1:
+      bloque = 5;
+      posicion = 1;
+      break;
+
+    case ZONA_2:
+      bloque = 6;
+      posicion = 1;
+      break;
+
+    case ZONA_3:
+      bloque = 6;
+      posicion = 8;
+      break;
+  }
+
+  MFRC522::MIFARE_Key key;
+  for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
+
+  byte buffer[18];
+  byte size = sizeof(buffer);
+
+  if (mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A,
+                               bloque, &key, &(mfrc522.uid)) != MFRC522::STATUS_OK) {
+    mfrc522.PICC_HaltA();
+    mfrc522.PCD_StopCrypto1();
+    return;
+  }
+
+  if (mfrc522.MIFARE_Read(bloque, buffer, &size) != MFRC522::STATUS_OK) {
+    mfrc522.PICC_HaltA();
+    mfrc522.PCD_StopCrypto1();
+    return;
+  }
+
+  byte valor = buffer[posicion];
+
+  // Enviar solo una vez por detección
+  if (!tarjetaDetectada) {
+
+    Serial1.print("Z");
+    Serial1.print((int)zonaActual + 1);
+    Serial1.print(":");
+    if (valor < 0x10) Serial1.print("0");
+    Serial1.print(valor, HEX);
+    Serial1.println();
+
+    Serial.print("Z");
+    Serial.print((int)zonaActual + 1);
+    Serial.print(":");
+    if (valor < 0x10) Serial.print("0");
+    Serial.print(valor, HEX);
+    Serial.println();
+
+    ultimoEnvio = millis();
+    tarjetaDetectada = true;
+  }
+
+  mfrc522.PICC_HaltA();
+  mfrc522.PCD_StopCrypto1();
 }
+
 
 
 void setup() {
@@ -318,69 +489,37 @@ void setup() {
   SPI.begin();
   mfrc522.PCD_Init();
   Serial.println("Lectura del UID");
-
-  //SERVO
-  servoUltrasonico.attach(45);   // Pin de señal del servo
 }
 
 
 void loop() {
 
-  /*
-  //comentar para debug
-  // Lee mensajes enviados por KUKI_RP2040.
+  // Leer instrucciones de la RP2040
   if (Serial1.available()) {
     msg = Serial1.readStringUntil('\n');
     Serial.print("RP2040 dice: ");
     Serial.println(msg);
-  }*/
-
-  //descomentar para debug
-  // Lee mensajes enviados por SERIE.
-  if (Serial.available()) {
-    msg = Serial.readStringUntil('\n');
-    Serial.print("RP2040 dice: ");
-    Serial.println(msg);
   }
 
-  camino = RFID();
-
-  switch (camino)
-  {
-  case -1:
-      Serial.println("Camino Desconocido");
+  switch(msg[zonaLecturaCamino]){
+    case 1:
+      zonaActual = Zona_1;
     break;
-  case 0:
-      Serial.println("Esperando Camino");
+    case 2:
+      zonaActual = Zona_2;
     break;
-  case 1:
-      Serial.println("Camino DIEGO");
+    case 3:
+      zonaActual = Zona_3;
     break;
-  case 2:
-      Serial.println("Camino VALLE");
-    break;
-  case 3:
-      Serial.println("Camino SERGI");
-    break;
-  case 4:
-      Serial.println("Camino CHEMA");
-    break;
-  default:
-      Serial.println("Esperando Camino");
+    default:
+      zonaActual = Zona_1;
     break;
   }
 
-  if(camino > 0) 
-  {
-    //leemos la distancia
-    ultraSonidos();
-        
-    // Lee el resto del string (a partir del char con índice 1) y asócialo a la velocidad dentro de unos valores aptos (mapeado).
-    vel = map(msg.substring(1).toInt(), 0, 1023, 0, 255);
-    moveKUKI(msg[0],paradaEmergencia,vel);
-  }
-  
+  // Leer RFID y enviar dato
+  RFID();
 
-  
-
+  paradaEmergencia = false;
+  vel = map(msg.substring(2).toInt(), 0, 1023, 0, 255);
+  moveKUKI(msg[1], paradaEmergencia, vel);
 }
