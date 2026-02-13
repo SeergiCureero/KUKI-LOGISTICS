@@ -2,12 +2,19 @@
 
 // ================= VARIABLES =================
 
-String msg; // la dejamos por compatibilidad/debug
+String msg;  // la dejamos por compatibilidad/debug
 char dir = 'n';
 
 // Velocidades
-int velRecto = 150;  // SOLO cuando dir == 'a'
-int velGiro  = 80;   // cuando dir != 'a' (todo lo demás)
+int velRecto = 120;  // SOLO cuando dir == 'o'
+int velGiro = 80;    // cuando dir != 'o' (todo lo demás)
+
+// Tiempos
+int tiempoPeriodo = 2000;
+int tiempoActual = 0;
+
+int tiempoPeriodoLectura = 100;
+int tiempoActualLectura = 0;
 
 // Pines control
 #define selectorModoBLT 2
@@ -28,18 +35,23 @@ bool COMSBLT = false;
 #define PinSensor4 11
 #define PinSensor5 12
 
+// ===== Comunicación MEGA =====
+String msgMega = "";
+uint8_t camino = 0x00;
+uint8_t zonaRecibida = 0;
+
 // ===== helper: enviar como "<dir><vel>\n" sin String (evita crashes) =====
-static void sendCmd(char d, int v) {
+static void sendCmd(int z, char d, int v) {
   if (v < 0) v = 0;
   if (v > 1023) v = 1023;
 
   char out[16];
-  snprintf(out, sizeof(out), "%c%d\n", d, v);
+  snprintf(out, sizeof(out), "%d%c%d\n", z, d, v);
 
   Serial1.print(out);
 
   Serial.print("TX -> ");
-  Serial.print(out); // ya incluye \n
+  Serial.print(out);  // ya incluye \n
 }
 
 // ================= BLE =================
@@ -60,8 +72,8 @@ void prog(BLEDevice peripheral) {
     return;
   }
 
-  BLECharacteristic X   = peripheral.characteristic("19b10001-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic Y   = peripheral.characteristic("19b10002-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic X = peripheral.characteristic("19b10001-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic Y = peripheral.characteristic("19b10002-e8f2-537e-4f6c-d104768a1214");
   BLECharacteristic Vel = peripheral.characteristic("19b10004-e8f2-537e-4f6c-d104768a1214");
 
   if (!X || !Y || !Vel) {
@@ -103,11 +115,13 @@ void prog(BLEDevice peripheral) {
         int vOut = (dir == 'a') ? velRecto : velGiro;
 
         // Enviar al MEGA
-        sendCmd(dir, vOut);
+        sendCmd(1, dir, vOut);
       } else {
         Serial.print("BLE read bytes: ");
-        Serial.print(nx); Serial.print(", ");
-        Serial.print(ny); Serial.print(", ");
+        Serial.print(nx);
+        Serial.print(", ");
+        Serial.print(ny);
+        Serial.print(", ");
         Serial.println(nv);
       }
     }
@@ -121,47 +135,98 @@ void prog(BLEDevice peripheral) {
 // ================= SENSORES =================
 
 char lecturaSensor() {
-  char direccion = 'n';
+  static char ultimaDirValida = 'z';
+  static unsigned long tUltimaDeteccion = 0;
 
-  const uint8_t pins[5] = {
-    PinSensor1, PinSensor2, PinSensor3, PinSensor4, PinSensor5
-  };
+  char direccion = 'z';
 
-  bool estado[5];
+  bool sensor1 = digitalRead(PinSensor1);
+  bool sensor2 = digitalRead(PinSensor2);
+  bool sensor3 = digitalRead(PinSensor3);
+  bool sensor4 = digitalRead(PinSensor4);
+  bool sensor5 = digitalRead(PinSensor5);
 
-  // Leer sensores
-  for (int i = 0; i < 5; i++) {
-    estado[i] = digitalRead(pins[i]);
-  }
+  // ---- Decide dirección según sensores ----
+  if (sensor1 && sensor2) {
+    Serial.print("más izquierda");
+    direccion = 'l';
+  } else if (sensor2 && sensor3) {
+    Serial.print("poco izquierda");
+    direccion = 'n';
+  } else if (sensor3 && sensor4) {
+    Serial.print("poco derecha");
+    direccion = 'p';
+  } else if (sensor4 && sensor5) {
+    Serial.print("más derecha");
+    direccion = 'r';
+  } else if (sensor1) {
+    Serial.print("full izquierda");
+    direccion = 'k';
+  } else if (sensor2) {
+    Serial.print("izquierda");
+    direccion = 'm';
+  } else if (sensor3) {
+    Serial.print("recto");
+    direccion = 'o';
+  } else if (sensor4) {
+    Serial.print("derecha");
+    direccion = 'q';
+  } else if (sensor5) {
+    Serial.print("full derecha");
+    direccion = 's';
+  } else {
+    // No detecta nada
+    unsigned long ahora = millis();
 
-  // Mostrar estados
-  Serial.print("Sensores -> ");
-  for (int i = 0; i < 5; i++) {
-    Serial.print("S");
-    Serial.print(i + 1);
-    Serial.print(":");
-    if (estado[i] == HIGH) Serial.print("ON ");
-    else Serial.print("OFF ");
-    if (i < 4) Serial.print("| ");
-  }
-  Serial.println();
-
-  // Primer sensor activo
-  for (int i = 0; i < 5; i++) {
-    if (estado[i] == HIGH) {
-      switch (i) {
-        case 0: direccion = 'h'; break;
-        case 1: direccion = 'k'; break;
-        case 2: direccion = 'a'; break;
-        case 3: direccion = 'l'; break;
-        case 4: direccion = 'b'; break;
-      }
-      break;
+    // Si aún no han pasado 2s desde la última detección, mantenemos la última dirección
+    if (ahora - tUltimaDeteccion < 2000) {
+      direccion = ultimaDirValida;
+    } else {
+      Serial.print("z");
+      direccion = 'z';
     }
+
+    return direccion;  // salimos ya
   }
+
+  // Si ha detectado algo (no entra al else), guardamos como última dirección válida y reiniciamos timer
+  ultimaDirValida = direccion;
+  tUltimaDeteccion = millis();
 
   return direccion;
 }
+
+// ================= LEER MEGA =================
+
+void leerMega() {
+
+  if (!Serial1.available()) return;
+
+  msgMega = Serial1.readStringUntil('\n');
+  msgMega.trim();
+
+  Serial.print("RX <- ");
+  Serial.println(msgMega);
+
+  // Validar formato: Z1:02
+  if (msgMega.length() >= 5 && msgMega[0] == 'Z' && msgMega[2] == ':') {
+
+    zonaRecibida = msgMega[1] - '0';
+
+    String valorHex = msgMega.substring(3);
+
+    camino = (uint8_t) strtol(valorHex.c_str(), NULL, 16);
+
+    Serial.print("Zona recibida: ");
+    Serial.println(zonaRecibida);
+
+    Serial.print("Camino guardado: 0x");
+    if (camino < 0x10) Serial.print("0");
+    Serial.println(camino, HEX);
+  }
+}
+
+
 
 // ================= SETUP =================
 
@@ -193,6 +258,7 @@ void setup() {
 // ================= LOOP =================
 
 void loop() {
+
   COMSBLT = digitalRead(selectorModoBLT);
   digitalWrite(Luz_blutuch, COMSBLT ? HIGH : LOW);
 
@@ -211,13 +277,18 @@ void loop() {
 
   // ----- MODO SENSORES -----
   else if (!COMSBLT) {
-    dir = lecturaSensor();
 
-    // Si dir == 'a' -> rápido; si no -> lento
-    int vOut = (dir == 'a') ? velRecto : velGiro;
+    if (millis() >= tiempoActualLectura + tiempoPeriodoLectura) {
+      tiempoActualLectura = millis();
 
-    sendCmd(dir, vOut);
+      leerMega();
 
-    delay(300);
+      dir = lecturaSensor();
+
+      // Si dir == 'o' -> rápido; si no -> lento
+      int vOut = (dir == 'o') ? velRecto : velGiro;
+
+      sendCmd(zonaRecibida, dir, vOut);
+    }
   }
 }
