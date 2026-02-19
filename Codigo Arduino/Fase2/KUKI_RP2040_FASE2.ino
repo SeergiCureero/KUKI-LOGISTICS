@@ -147,7 +147,13 @@ char lecturaSensor() {
   bool sensor5 = digitalRead(PinSensor5);
 
   // ---- Decide dirección según sensores ----
-  if (sensor1 && sensor2) {
+  
+  if(sensor3 && sensor4 && sensor5){
+    if (zonaRecibida == 3){
+      Serial.print("derecha camino 3");
+      direccion = 'q';
+    } 
+  } else if (sensor1 && sensor2) {
     Serial.print("más izquierda");
     direccion = 'l';
   } else if (sensor2 && sensor3) {
