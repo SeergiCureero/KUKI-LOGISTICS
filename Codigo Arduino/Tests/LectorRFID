@@ -1,0 +1,237 @@
+// ===== RFID DUMP / INTERACTIU =====
+MFRC522::MIFARE_Key keyA;
+bool cardDumpDone = false;   // per fer dump 1 cop per targeta (o per "sessió")
+bool interactiveEnabled = true; // per activar comandes via Serial
+
+static byte absBlock1K(byte sector, byte blockInSector) {
+  return (byte)(sector * 4 + blockInSector);
+}
+
+static bool isTrailerBlock1K(byte blockInSector) {
+  return blockInSector == 3;
+}
+
+static void printHex2(byte b) {
+  if (b < 0x10) Serial.print("0");
+  Serial.print(b, HEX);
+}
+
+static bool authBlock(byte blockAbs) {
+  auto st = mfrc522.PCD_Authenticate(
+    MFRC522::PICC_CMD_MF_AUTH_KEY_A,
+    blockAbs,
+    &keyA,
+    &(mfrc522.uid)
+  );
+  return (st == MFRC522::STATUS_OK);
+}
+
+static bool readBlock16(byte blockAbs, byte out16[16]) {
+  byte buffer[18];
+  byte size = sizeof(buffer);
+  auto st = mfrc522.MIFARE_Read(blockAbs, buffer, &size);
+  if (st != MFRC522::STATUS_OK) return false;
+  for (byte i = 0; i < 16; i++) out16[i] = buffer[i];
+  return true;
+}
+
+static void haltStop() {
+  mfrc522.PICC_HaltA();
+  mfrc522.PCD_StopCrypto1();
+}
+
+static void dumpCardClassic1K(bool skipTrailers) {
+  Serial.println();
+  Serial.println("=== DUMP (MIFARE Classic 1K) ===");
+
+  for (byte sector = 0; sector < 16; sector++) {
+    Serial.print("-- Sector "); Serial.print(sector); Serial.println(" --");
+
+    for (byte bIn = 0; bIn < 4; bIn++) {
+      byte bAbs = absBlock1K(sector, bIn);
+
+      if (skipTrailers && isTrailerBlock1K(bIn)) {
+        Serial.print("S"); Serial.print(sector);
+        Serial.print(" B"); Serial.print(bIn);
+        Serial.print(" (abs "); Serial.print(bAbs);
+        Serial.println(") : [TRAILER]");
+        continue;
+      }
+
+      if (!authBlock(bAbs)) {
+        Serial.print("S"); Serial.print(sector);
+        Serial.print(" B"); Serial.print(bIn);
+        Serial.print(" (abs "); Serial.print(bAbs);
+        Serial.println(") : AUTH FAIL");
+        haltStop();
+        continue;
+      }
+
+      byte data16[16];
+      if (!readBlock16(bAbs, data16)) {
+        Serial.print("S"); Serial.print(sector);
+        Serial.print(" B"); Serial.print(bIn);
+        Serial.print(" (abs "); Serial.print(bAbs);
+        Serial.println(") : READ FAIL");
+        haltStop();
+        continue;
+      }
+
+      Serial.print("S"); Serial.print(sector);
+      Serial.print(" B"); Serial.print(bIn);
+      Serial.print(" (abs "); Serial.print(bAbs); Serial.print(") : ");
+
+      for (byte i = 0; i < 16; i++) {
+        printHex2(data16[i]);
+        if (i != 15) Serial.print(" ");
+      }
+      Serial.println();
+
+      haltStop();
+    }
+  }
+
+  Serial.println("=== END DUMP ===");
+  Serial.println();
+}
+
+static void printHelp() {
+  Serial.println("Commands:");
+  Serial.println("  HELP              -> show this help");
+  Serial.println("  DUMP              -> dump entire card (Classic 1K)");
+  Serial.println("  R <S> <B> <BYTE>  -> read one byte (S 0..15, B 0..3, BYTE 0..15)");
+  Serial.println("  B <S> <B>         -> read one block (16 bytes)");
+  Serial.println("  S <S>             -> read one sector (data blocks; trailers skipped)");
+  Serial.println();
+  Serial.println("Examples:");
+  Serial.println("  R 1 2 8");
+  Serial.println("  B 1 2");
+  Serial.println("  S 1");
+}
+
+static void interactiveRFID() {
+  if (!interactiveEnabled) return;
+  if (!Serial.available()) return;
+
+  String line = Serial.readStringUntil('\n');
+  line.trim();
+  if (line.length() == 0) return;
+
+  String up = line;
+  up.toUpperCase();
+
+  if (up == "HELP") { printHelp(); return; }
+
+  if (up == "DUMP") {
+    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
+      Serial.println("Present a card first.");
+      return;
+    }
+    dumpCardClassic1K(true);
+    haltStop();
+    return;
+  }
+
+  int s = -1, b = -1, by = -1;
+  char c0 = 0;
+
+  if (sscanf(up.c_str(), "R %d %d %d", &s, &b, &by) == 3) {
+    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
+      Serial.println("Present a card first.");
+      return;
+    }
+    if (s < 0 || s > 15 || b < 0 || b > 3 || by < 0 || by > 15) {
+      Serial.println("Invalid. Use: R <0..15> <0..3> <0..15>");
+      return;
+    }
+
+    byte bAbs = absBlock1K((byte)s, (byte)b);
+
+    if (!authBlock(bAbs)) { Serial.println("AUTH FAIL"); haltStop(); return; }
+
+    byte data16[16];
+    if (!readBlock16(bAbs, data16)) { Serial.println("READ FAIL"); haltStop(); return; }
+
+    Serial.print("S"); Serial.print(s);
+    Serial.print(" B"); Serial.print(b);
+    Serial.print(" byte "); Serial.print(by);
+    Serial.print(" = 0x"); printHex2(data16[by]);
+    Serial.print(" (dec "); Serial.print((int)data16[by]); Serial.println(")");
+
+    haltStop();
+    return;
+  }
+
+  if (sscanf(up.c_str(), "B %d %d", &s, &b) == 2) {
+    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
+      Serial.println("Present a card first.");
+      return;
+    }
+    if (s < 0 || s > 15 || b < 0 || b > 3) {
+      Serial.println("Invalid. Use: B <0..15> <0..3>");
+      return;
+    }
+
+    byte bAbs = absBlock1K((byte)s, (byte)b);
+
+    if (!authBlock(bAbs)) { Serial.println("AUTH FAIL"); haltStop(); return; }
+
+    byte data16[16];
+    if (!readBlock16(bAbs, data16)) { Serial.println("READ FAIL"); haltStop(); return; }
+
+    Serial.print("S"); Serial.print(s);
+    Serial.print(" B"); Serial.print(b);
+    Serial.print(" (abs "); Serial.print(bAbs); Serial.print(") : ");
+    for (byte i = 0; i < 16; i++) {
+      printHex2(data16[i]);
+      if (i != 15) Serial.print(" ");
+    }
+    Serial.println();
+
+    haltStop();
+    return;
+  }
+
+  if (sscanf(up.c_str(), "S %d", &s) == 1) {
+    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
+      Serial.println("Present a card first.");
+      return;
+    }
+    if (s < 0 || s > 15) {
+      Serial.println("Invalid. Use: S <0..15>");
+      return;
+    }
+
+    Serial.print("-- Sector "); Serial.print(s); Serial.println(" --");
+    for (byte bIn = 0; bIn < 4; bIn++) {
+      if (isTrailerBlock1K(bIn)) continue;
+
+      byte bAbs = absBlock1K((byte)s, bIn);
+      if (!authBlock(bAbs)) {
+        Serial.print("B"); Serial.print(bIn); Serial.println(": AUTH FAIL");
+        haltStop();
+        continue;
+      }
+
+      byte data16[16];
+      if (!readBlock16(bAbs, data16)) {
+        Serial.print("B"); Serial.print(bIn); Serial.println(": READ FAIL");
+        haltStop();
+        continue;
+      }
+
+      Serial.print("B"); Serial.print(bIn);
+      Serial.print(" (abs "); Serial.print(bAbs); Serial.print(") : ");
+      for (byte i = 0; i < 16; i++) {
+        printHex2(data16[i]);
+        if (i != 15) Serial.print(" ");
+      }
+      Serial.println();
+
+      haltStop();
+    }
+    return;
+  }
+
+  Serial.println("Unknown command. Type HELP.");
+}
