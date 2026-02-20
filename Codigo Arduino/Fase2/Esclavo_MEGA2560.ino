@@ -34,15 +34,7 @@ unsigned int distancia;           // distancia leída
 bool paradaEmergencia = false;
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
 
-// ZONAS
-enum Zona {
-  ZONA_1,
-  ZONA_2,
-  ZONA_3
-};
-
-
-Zona zonaActual = ZONA_1;
+int zonaActual = 1;
 
 unsigned long ultimoEnvio = 0;
 const unsigned long intervaloRFID = 200;   // tiempo mínimo entre lecturas
@@ -402,17 +394,17 @@ void RFID() {
   byte posicion;
 
   switch (zonaActual) {
-    case ZONA_1:
+    case 1:
       bloque = 5;
       posicion = 1;
       break;
 
-    case ZONA_2:
+    case 2:
       bloque = 6;
       posicion = 1;
       break;
 
-    case ZONA_3:
+    case 3:
       bloque = 6;
       posicion = 8;
       break;
@@ -501,18 +493,18 @@ void loop() {
     Serial.println(msg);
   }
 
-  switch(msg[zonaLecturaCamino]){
+  switch(msg[0]){
     case 1:
-      zonaActual = Zona_1;
+      zonaActual = 1;
     break;
     case 2:
-      zonaActual = Zona_2;
+      zonaActual = 2;
     break;
     case 3:
-      zonaActual = Zona_3;
+      zonaActual = 3;
     break;
     default:
-      zonaActual = Zona_1;
+      zonaActual = 1;
     break;
   }
 
