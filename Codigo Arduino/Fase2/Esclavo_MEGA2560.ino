@@ -1,72 +1,82 @@
 /* Esclavo (MEGA2560) */
-#include <SPI.h>      //RFID
-#include <MFRC522.h>  //RFID
+#include <SPI.h>
+#include <MFRC522.h>
 #include <NewPing.h>
 
-// VARIABLES GENERALES
-String msg;
-int vel;
+// ================= VARIABLES GENERALES =================
+String msg = "";
+int vel = 0;
 
-// VARIABLES MOTOR
-#define motor1A 2     
-#define motor1B 3     
+// ================= VARIABLES MOTOR =================
+#define motor1A 2
+#define motor1B 3
 #define motor1Vel 4
-#define motor2A 5     
-#define motor2B 6     
+#define motor2A 5
+#define motor2B 6
 #define motor2Vel 7
-#define motor3A 8     
-#define motor3B 9     
+#define motor3A 8
+#define motor3B 9
 #define motor3Vel 10
-#define motor4A 11     
-#define motor4B 12     
+#define motor4A 11
+#define motor4B 12
 #define motor4Vel 13
 
-// VARIABLES RFID
+// ================= VARIABLES RFID =================
 #define RST_PIN 48
 #define SS_PIN 53
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 
-// VARIABLES SENSOR ULTRASONICO 
-#define TRIGGER_PIN  22
-#define ECHO_PIN     23
-#define MAX_DISTANCE 200  // distancia maxima en cm
-unsigned int distancia;           // distancia leída 
+// ================= VARIABLES SENSOR ULTRASONICO =================
+#define TRIGGER_PIN 22
+#define ECHO_PIN 23
+#define MAX_DISTANCE 200
+unsigned int distancia;
 bool paradaEmergencia = false;
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
 
-int zonaActual = 1;
+// ================= ZONA / RFID CONTROL =================
+// ✅ Ara permetem 0..3
+int zonaActual = 0;
 
 unsigned long ultimoEnvio = 0;
-const unsigned long intervaloRFID = 200;   // tiempo mínimo entre lecturas
+const unsigned long intervaloRFID = 200;
 bool tarjetaDetectada = false;
 
+// Per reenviar quan canvies zona/valor sense treure targeta
+int lastZonaSent = -1;
+byte lastValorSent = 0x00;
 
+// ================= UART1 LINE READER (NO BLOQUEJANT) =================
+static bool readLineSerial1(String &out) {
+  static char buf[32];
+  static uint8_t idx = 0;
 
-void moveKUKI(char direccion, bool parada, int vel){
-    //MOVILIDAD
-    /*
-    El mensaje que recibirá de la master será un int con la dirección en la que se debe mover, seguido de la velocidad. 
-    Direcciones:
-            a
-        h | b
-        \|/
-        g---+---c 
-        /|\
-        f | d
-            e
-    
-    Además, se deberán considerar movimientos con puntos de giro fuera del centro del AGV (como los de un coche normal).
-    - giro a izquierdas: i
-    - giro a derechas: j
+  while (Serial1.available()) {
+    char c = (char)Serial1.read();
+    if (c == '\r') continue;
 
+    if (c == '\n') {
+      buf[idx] = '\0';
+      out = String(buf);
+      idx = 0;
+      out.trim();
+      return true;
+    }
 
-    EJEMPLO DE MENSAJE:
-    a1023 -> adelante a toda velocidad
-    f512 -> diagonal -- a mitad de velocidad
-    00 -> parado, 0 velocidad
-        */
+    if (idx < sizeof(buf) - 1) buf[idx++] = c;
+    else idx = 0;  // overflow -> reset
+  }
+  return false;
+}
 
-    switch(direccion){
+// ================= MOTORES =================
+void moveKUKI(char direccion, bool parada, int velPWM) {
+  // ✅ si paradaEmergencia, forcem 0
+  if (parada) velPWM = 0;
+  velPWM = constrain(velPWM, 0, 255);
+
+  // Direccions
+  switch(direccion){
         case 'a':
           // Adelante
           // Todos los motores se mueven adelante.
@@ -317,107 +327,60 @@ void moveKUKI(char direccion, bool parada, int vel){
           //Serial.println("Full Derecha");
         break;
 
-        default:
-          // Apaga motores
-          digitalWrite(motor1A, LOW);
-          digitalWrite(motor1B, LOW);
-          digitalWrite(motor2A, LOW);
-          digitalWrite(motor2B, LOW);
-          digitalWrite(motor3A, LOW);
-          digitalWrite(motor3B, LOW);
-          digitalWrite(motor4A, LOW);
-          digitalWrite(motor4B, LOW);
-          //Serial.println("Motores Apagados");
-        break;
-    }
+    default:
+      digitalWrite(motor1A, LOW); digitalWrite(motor1B, LOW);
+      digitalWrite(motor2A, LOW); digitalWrite(motor2B, LOW);
+      digitalWrite(motor3A, LOW); digitalWrite(motor3B, LOW);
+      digitalWrite(motor4A, LOW); digitalWrite(motor4B, LOW);
+      break;
+  }
 
-    if (paradaEmergencia)
-    {
-        analogWrite(motor1Vel, 0);
-        analogWrite(motor2Vel, 0);
-        analogWrite(motor3Vel, 0);
-        analogWrite(motor4Vel, 0);
-    }
-    else
-    {
-        analogWrite(motor1Vel, vel);
-        analogWrite(motor2Vel, vel);
-        analogWrite(motor3Vel, vel);
-        analogWrite(motor4Vel, vel);
-    }
+  // ✅ PWM (una sola vegada, net)
+  analogWrite(motor1Vel, velPWM);
+  analogWrite(motor2Vel, velPWM);
+  analogWrite(motor3Vel, velPWM);
+  analogWrite(motor4Vel, velPWM);
 }
 
-/*
-void ultraSonidos(){
-    //Ultrasonidos (US) y gestión de la parada de emergencia
-    distancia = sonar.ping_cm();
-    if (distancia > 0) {
-        Serial.print("Distancia: ");
-        Serial.print(distancia);
-        Serial.println(" cm");
-        if(distancia <= 5){
-            paradaEmergencia = true;
-            Serial.println("OBJETO EN TRAYECTORIA");
-            Serial.println("PARANDO KUKI");
-        }
-        else{
-            if(paradaEmergencia){
-                //si se ha parado y ya no se detectan objetos en la trayectoria, esperar 1s y resetear variable
-                delay(1000);
-            }
-            paradaEmergencia = false;
-        }
-    } 
-    else {
-        Serial.println("Ningún objecto detectado");
-        if(paradaEmergencia){
-            //si se ha parado y ya no se detectan objetos en la trayectoria, esperar 1s y resetear variable
-            delay(1000);
-        }
-        paradaEmergencia = false;
-    }
-}
-*/
-
+// ================= RFID =================
 void RFID() {
-
   if (millis() - ultimoEnvio < intervaloRFID) return;
 
   if (!mfrc522.PICC_IsNewCardPresent()) {
     tarjetaDetectada = false;
+    lastZonaSent = -1;
     return;
   }
 
   if (!mfrc522.PICC_ReadCardSerial()) return;
 
   // --- Definim sector/bloc dins sector/byte ---
-  byte sector = 1;        // sempre sector 1 segons el que has dit
+  byte sector = 1;  // segons el que has dit
   byte blocDins = 0;
   byte posicion = 0;
 
   switch (zonaActual) {
-    case 1:               // S1, B1, byte1
+    case 0: // ✅ pitstop: llegeix igual que zona 1
+    case 1:
       blocDins = 1;
       posicion = 1;
-      break;
+      break;  // S1, B1, byte1
 
-    case 2:               // S1, B2, byte1
+    case 2:
       blocDins = 2;
       posicion = 1;
-      break;
+      break;  // S1, B2, byte1
 
-    case 3:               // S1, B2, byte8
+    case 3:
       blocDins = 2;
       posicion = 8;
-      break;
+      break;  // S1, B2, byte8
 
     default:
-      // zona no vàlida
       mfrc522.PICC_HaltA();
       return;
   }
 
-  // Convertim a bloc absolut (sector * 4 + blocDins)
   byte bloque = sector * 4 + blocDins;
 
   MFRC522::MIFARE_Key key;
@@ -439,7 +402,6 @@ void RFID() {
     return;
   }
 
-  // (Opcional) protecció per si de cas
   if (posicion >= 16) {
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
@@ -448,18 +410,16 @@ void RFID() {
 
   byte valor = buffer[posicion];
 
-  // Enviar solo una vez por detección
-  if (!tarjetaDetectada) {
-
+  if (!tarjetaDetectada || zonaActual != lastZonaSent || valor != lastValorSent) {
     Serial1.print("Z");
-    Serial1.print((int)zonaActual);   // <-- aquí ja NO sumo 1
+    Serial1.print(zonaActual);
     Serial1.print(":");
     if (valor < 0x10) Serial1.print("0");
     Serial1.print(valor, HEX);
     Serial1.println();
 
     Serial.print("Z");
-    Serial.print((int)zonaActual);    // <-- aquí ja NO sumo 1
+    Serial.print(zonaActual);
     Serial.print(":");
     if (valor < 0x10) Serial.print("0");
     Serial.print(valor, HEX);
@@ -467,68 +427,54 @@ void RFID() {
 
     ultimoEnvio = millis();
     tarjetaDetectada = true;
+    lastZonaSent = zonaActual;
+    lastValorSent = valor;
   }
 
   mfrc522.PICC_HaltA();
   mfrc522.PCD_StopCrypto1();
 }
 
-
-
 void setup() {
+  Serial.begin(9600);
+  Serial1.begin(9600);
 
-  Serial.begin(9600);     // USB hacia PC
-  Serial1.begin(9600);    // UART1: TX1=18, RX1=19
+  pinMode(motor1A, OUTPUT); pinMode(motor1B, OUTPUT); pinMode(motor1Vel, OUTPUT);
+  pinMode(motor2A, OUTPUT); pinMode(motor2B, OUTPUT); pinMode(motor2Vel, OUTPUT);
+  pinMode(motor3A, OUTPUT); pinMode(motor3B, OUTPUT); pinMode(motor3Vel, OUTPUT);
+  pinMode(motor4A, OUTPUT); pinMode(motor4B, OUTPUT); pinMode(motor4Vel, OUTPUT);
 
-  //pinMode Motores
-  pinMode(motor1A,OUTPUT);
-  pinMode(motor1B,OUTPUT);
-  pinMode(motor1Vel,OUTPUT);
-  pinMode(motor2A,OUTPUT);
-  pinMode(motor2B,OUTPUT);
-  pinMode(motor2Vel,OUTPUT);
-  pinMode(motor3A,OUTPUT);
-  pinMode(motor3B,OUTPUT);
-  pinMode(motor3Vel,OUTPUT);
-  pinMode(motor4A,OUTPUT);
-  pinMode(motor4B,OUTPUT);
-  pinMode(motor4Vel,OUTPUT);
-
-  //RFID
   SPI.begin();
   mfrc522.PCD_Init();
-  Serial.println("Lectura del UID");
+
+  Serial.println("MEGA READY (RFID + UART1) - zone 0 enabled");
 }
 
-
 void loop() {
+  // 1) Llegir instruccions de la RP2040 (no-bloquejant)
+  String line;
+  if (readLineSerial1(line)) {
+    msg = line;
 
-  // Leer instrucciones de la RP2040
-  if (Serial1.available()) {
-    msg = Serial1.readStringUntil('\n');
-    Serial.print("RP2040 dice: ");
-    Serial.println(msg);
+    // Format: "<zona><dir><vel>" ex: "0n0" "1o200" "3q120"
+    if (msg.length() >= 3) {
+      char zc = msg[0];
+      char dc = msg[1];
+      int v = msg.substring(2).toInt();
+
+      // ✅ accepta 0..3
+      if (zc >= '0' && zc <= '3') zonaActual = zc - '0';
+      else zonaActual = 1;
+
+      vel = constrain(v, 0, 255);
+
+      // Si pitstop (zona 0) o vel==0 -> direcció safe
+      if (zonaActual == 0 || vel == 0) dc = 'n';
+
+      moveKUKI(dc, paradaEmergencia, vel);
+    }
   }
 
-  switch(msg[0]){
-    case 1:
-      zonaActual = 1;
-    break;
-    case 2:
-      zonaActual = 2;
-    break;
-    case 3:
-      zonaActual = 3;
-    break;
-    default:
-      zonaActual = 1;
-    break;
-  }
-
-  // Leer RFID y enviar dato
+  // 2) RFID
   RFID();
-
-  paradaEmergencia = false;
-  vel = map(msg.substring(2).toInt(), 0, 1023, 0, 255);
-  moveKUKI(msg[1], paradaEmergencia, vel);
 }
