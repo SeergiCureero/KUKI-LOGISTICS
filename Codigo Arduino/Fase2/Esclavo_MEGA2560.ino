@@ -390,25 +390,35 @@ void RFID() {
 
   if (!mfrc522.PICC_ReadCardSerial()) return;
 
-  byte bloque;
-  byte posicion;
+  // --- Definim sector/bloc dins sector/byte ---
+  byte sector = 1;        // sempre sector 1 segons el que has dit
+  byte blocDins = 0;
+  byte posicion = 0;
 
   switch (zonaActual) {
-    case 1:
-      bloque = 5;
+    case 1:               // S1, B1, byte1
+      blocDins = 1;
       posicion = 1;
       break;
 
-    case 2:
-      bloque = 6;
+    case 2:               // S1, B2, byte1
+      blocDins = 2;
       posicion = 1;
       break;
 
-    case 3:
-      bloque = 6;
+    case 3:               // S1, B2, byte8
+      blocDins = 2;
       posicion = 8;
       break;
+
+    default:
+      // zona no vàlida
+      mfrc522.PICC_HaltA();
+      return;
   }
+
+  // Convertim a bloc absolut (sector * 4 + blocDins)
+  byte bloque = sector * 4 + blocDins;
 
   MFRC522::MIFARE_Key key;
   for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
@@ -429,20 +439,27 @@ void RFID() {
     return;
   }
 
+  // (Opcional) protecció per si de cas
+  if (posicion >= 16) {
+    mfrc522.PICC_HaltA();
+    mfrc522.PCD_StopCrypto1();
+    return;
+  }
+
   byte valor = buffer[posicion];
 
   // Enviar solo una vez por detección
   if (!tarjetaDetectada) {
 
     Serial1.print("Z");
-    Serial1.print((int)zonaActual + 1);
+    Serial1.print((int)zonaActual);   // <-- aquí ja NO sumo 1
     Serial1.print(":");
     if (valor < 0x10) Serial1.print("0");
     Serial1.print(valor, HEX);
     Serial1.println();
 
     Serial.print("Z");
-    Serial.print((int)zonaActual + 1);
+    Serial.print((int)zonaActual);    // <-- aquí ja NO sumo 1
     Serial.print(":");
     if (valor < 0x10) Serial.print("0");
     Serial.print(valor, HEX);
