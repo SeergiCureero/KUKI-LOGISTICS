@@ -1,20 +1,19 @@
 #include <ArduinoBLE.h>
 
 // ================= VARIABLES =================
-
-String msg;  // la dejamos por compatibilidad/debug
+String msg;   // compat/debug
 char dir = 'n';
 
-// Velocidades
-int velRecto = 120;  // SOLO cuando dir == 'o'
-int velGiro = 80;    // cuando dir != 'o' (todo lo demás)
+// Cuantas lecturas seguidas sin linea toleramos
+const uint8_t MAX_MISS = 10;
+
+// Velocitats (0..255)
+int velRecto = 200;
+int velGiro  = 120;
 
 // Tiempos
-int tiempoPeriodo = 2000;
-int tiempoActual = 0;
-
 int tiempoPeriodoLectura = 100;
-int tiempoActualLectura = 0;
+unsigned long tiempoActualLectura = 0;
 
 // Pines control
 #define selectorModoBLT 2
@@ -23,8 +22,9 @@ int tiempoActualLectura = 0;
 
 // Leds
 #define Luz_VERDE 5
-#define Luz_blutuch 6
-#define Luz_ROJO 7
+#define Luz_ROJO 6
+#define Luz_blutuch 7
+
 
 bool COMSBLT = false;
 
@@ -38,24 +38,106 @@ bool COMSBLT = false;
 // ===== Comunicación MEGA =====
 String msgMega = "";
 uint8_t camino = 0x00;
-uint8_t zonaRecibida = 0;
+uint8_t zonaRecibida = 0;     // feedback del MEGA (Zx:yy)
 
-// ===== helper: enviar como "<dir><vel>\n" sin String (evita crashes) =====
-static void sendCmd(int z, char d, int v) {
-  if (v < 0) v = 0;
-  if (v > 1023) v = 1023;
+// ✅ estat intern (comença en ZONA 0)
+uint8_t zonaOrdenada = 0;
+
+// ================= LED / HOLD CONTROL =================
+static const uint32_t PITSTEP_MS = 500;   // zona 0: 0.5s verd / 0.5s vermell
+static const uint32_t BLINK_MS   = 250;   // blink (error)
+static const uint32_t HOLD_MS    = 2000;  // stop 2s quan camí=0x01 a Z2/Z3
+
+unsigned long holdUntil = 0;
+
+// ✅ blink “latch” per estat
+bool blinkRed = false;
+bool blinkGreen = false;
+
+static inline bool inHold() { return millis() < holdUntil; }
+static inline void startHold(unsigned long ms) { holdUntil = millis() + ms; }
+
+// ================= UART1 LINE READER (NO BLOQUEJANT) =================
+static bool readLineSerial1(String &out) {
+  static char buf[32];
+  static uint8_t idx = 0;
+
+  while (Serial1.available()) {
+    char c = (char)Serial1.read();
+    if (c == '\r') continue;
+
+    if (c == '\n') {
+      buf[idx] = '\0';
+      out = String(buf);
+      idx = 0;
+      out.trim();
+      return true;
+    }
+
+    if (idx < sizeof(buf) - 1) buf[idx++] = c;
+    else idx = 0; // overflow -> reset
+  }
+  return false;
+}
+
+// ===== helper: enviar como "<zona><dir><vel>\n" =====
+static void sendCmd(uint8_t z, char d, int v) {
+  if (z > 3) z = 3;         // permet 0..3
+  v = constrain(v, 0, 255);
 
   char out[16];
-  snprintf(out, sizeof(out), "%d%c%d\n", z, d, v);
-
+  snprintf(out, sizeof(out), "%d%c%d\n", (int)z, d, v);
   Serial1.print(out);
+}
 
-  Serial.print("TX -> ");
-  Serial.print(out);  // ya incluye \n
+// ================= LEDS =================
+static void setLeds(bool green, bool red) {
+  digitalWrite(Luz_VERDE, green ? HIGH : LOW);
+  digitalWrite(Luz_ROJO,  red   ? HIGH : LOW);
+}
+
+static void updateLeds() {
+  // HOLD: leds OFF i ja
+  if (inHold()) {
+    setLeds(false, false);
+    return;
+  }
+
+  // ZONA 0: alterna verd/vermell 0.5s/0.5s
+  if (zonaOrdenada == 0) {
+    uint32_t phase = (millis() / PITSTEP_MS) % 2;
+    if (phase == 0) setLeds(true, false);
+    else            setLeds(false, true);
+    return;
+  }
+
+  // ZONA 2: per defecte FIX vermell, si blinkRed => blink vermell
+  if (zonaOrdenada == 2) {
+    if (blinkRed) {
+      bool on = ((millis() / BLINK_MS) % 2) == 0;
+      setLeds(false, on);
+    } else {
+      setLeds(false, true);
+    }
+    return;
+  }
+
+  // ZONA 3: per defecte FIX verd, si blinkGreen => blink verd
+  if (zonaOrdenada == 3) {
+    if (blinkGreen) {
+      bool on = ((millis() / BLINK_MS) % 2) == 0;
+      setLeds(on, false);
+    } else {
+      setLeds(true, false);
+    }
+    return;
+  }
+
+  // ZONA 1: leds OFF
+  setLeds(false, false);
 }
 
 // ================= BLE =================
-
 void prog(BLEDevice peripheral) {
   Serial.println("Conectando BLE...");
 
@@ -83,6 +165,9 @@ void prog(BLEDevice peripheral) {
   }
 
   while (peripheral.connected()) {
+    leerMega();
+    updateLeds();
+
     if (X.canRead() && Y.canRead() && Vel.canRead()) {
       uint8_t bx[4], by[4], bv[4];
 
@@ -90,17 +175,14 @@ void prog(BLEDevice peripheral) {
       int ny = Y.readValue(by, 4);
       int nv = Vel.readValue(bv, 4);
 
-      // Solo si llegan 4 bytes por float
       if (nx == 4 && ny == 4 && nv == 4) {
         float valX, valY, valVel;
-
         memcpy(&valX, bx, 4);
         memcpy(&valY, by, 4);
         memcpy(&valVel, bv, 4);
 
         float t = 0.2f;
 
-        // dirección desde acelerómetro
         if (abs(valX) < t && abs(valY) < t) dir = 'n';
         else if (valX > t && valY > t) dir = 'h';
         else if (valX > t && valY < -t) dir = 'b';
@@ -111,18 +193,23 @@ void prog(BLEDevice peripheral) {
         else if (valY > t) dir = 'g';
         else if (valY < -t) dir = 'c';
 
-        // Si quieres ignorar valVel y usar velocidades fijas:
-        int vOut = (dir == 'a') ? velRecto : velGiro;
+        int vMove = (dir == 'o') ? velRecto : velGiro;
 
-        // Enviar al MEGA
-        sendCmd(1, dir, vOut);
-      } else {
-        Serial.print("BLE read bytes: ");
-        Serial.print(nx);
-        Serial.print(", ");
-        Serial.print(ny);
-        Serial.print(", ");
-        Serial.println(nv);
+        int vOut = vMove;
+        char dirOut = dir;
+
+        // HOLD o ZONA 0 => STOP
+        if (inHold() || zonaOrdenada == 0) {
+          dirOut = 'n';
+          vOut = 0;
+        }
+        // ZONA 2/3: si NO és retorn (0x01) => STOP
+        else if ((zonaOrdenada == 2 || zonaOrdenada == 3) && camino != 0x01) {
+          dirOut = 'n';
+          vOut = 0;
+        }
+
+        sendCmd(zonaOrdenada, dirOut, vOut);
       }
     }
 
@@ -133,10 +220,9 @@ void prog(BLEDevice peripheral) {
 }
 
 // ================= SENSORES =================
-
 char lecturaSensor() {
   static char ultimaDirValida = 'z';
-  static unsigned long tUltimaDeteccion = 0;
+  static uint8_t missCount = 0;
 
   char direccion = 'z';
 
@@ -146,103 +232,121 @@ char lecturaSensor() {
   bool sensor4 = digitalRead(PinSensor4);
   bool sensor5 = digitalRead(PinSensor5);
 
-  // ---- Decide dirección según sensores ----
-  
-  if(sensor3 && sensor4 && sensor5){
-    if (zonaRecibida == 3){
-      Serial.print("derecha camino 3");
-      direccion = 'q';
-    } 
+  if (sensor3 && sensor4 && sensor5) {
+    if (zonaRecibida == 3) direccion = 'q';
   } else if (sensor1 && sensor2) {
-    Serial.print("más izquierda");
     direccion = 'l';
-  } else if (sensor2 && sensor3) {
-    Serial.print("poco izquierda");
-    direccion = 'n';
   } else if (sensor3 && sensor4) {
-    Serial.print("poco derecha");
     direccion = 'p';
   } else if (sensor4 && sensor5) {
-    Serial.print("más derecha");
     direccion = 'r';
   } else if (sensor1) {
-    Serial.print("full izquierda");
     direccion = 'k';
   } else if (sensor2) {
-    Serial.print("izquierda");
     direccion = 'm';
   } else if (sensor3) {
-    Serial.print("recto");
     direccion = 'o';
   } else if (sensor4) {
-    Serial.print("derecha");
     direccion = 'q';
   } else if (sensor5) {
-    Serial.print("full derecha");
     direccion = 's';
-  } else {
-    // No detecta nada
-    unsigned long ahora = millis();
-
-    // Si aún no han pasado 2s desde la última detección, mantenemos la última dirección
-    if (ahora - tUltimaDeteccion < 2000) {
-      direccion = ultimaDirValida;
-    } else {
-      Serial.print("z");
-      direccion = 'z';
-    }
-
-    return direccion;  // salimos ya
   }
 
-  // Si ha detectado algo (no entra al else), guardamos como última dirección válida y reiniciamos timer
-  ultimaDirValida = direccion;
-  tUltimaDeteccion = millis();
+  if (direccion != 'z') {
+    ultimaDirValida = direccion;
+    missCount = 0;
+    return direccion;
+  }
 
-  return direccion;
+  missCount++;
+  if (missCount < MAX_MISS) return ultimaDirValida;
+  return 'z';
 }
 
-// ================= LEER MEGA =================
-
+// ================= LEER MEGA (RFID) =================
 void leerMega() {
+  String line;
+  if (!readLineSerial1(line)) return;
 
-  if (!Serial1.available()) return;
+  msgMega = line;
 
-  msgMega = Serial1.readStringUntil('\n');
-  msgMega.trim();
-
-  Serial.print("RX <- ");
-  Serial.println(msgMega);
-
-  // Validar formato: Z1:02
+  // Format: Zx:YY
   if (msgMega.length() >= 5 && msgMega[0] == 'Z' && msgMega[2] == ':') {
-
-    zonaRecibida = msgMega[1] - '0';
+    uint8_t z = (uint8_t)(msgMega[1] - '0');
+    if (z > 3) return;
 
     String valorHex = msgMega.substring(3);
+    uint8_t nuevoCamino = (uint8_t)strtol(valorHex.c_str(), NULL, 16);
 
-    camino = (uint8_t) strtol(valorHex.c_str(), NULL, 16);
+    zonaRecibida = z;
+    camino = nuevoCamino;
 
-    Serial.print("Zona recibida: ");
-    Serial.println(zonaRecibida);
+    // ========= FSM + blink latch =========
+    switch (zonaOrdenada) {
 
-    Serial.print("Camino guardado: 0x");
+      // ZONA 0: només surt si veu 02 o 03
+      case 0:
+        if (camino == 0x02) { zonaOrdenada = 2; blinkRed = false; }
+        else if (camino == 0x03) { zonaOrdenada = 3; blinkGreen = false; }
+        break;
+
+      // ZONA 1: 02->2, 03->3, 00->0
+      case 1:
+        if (camino == 0x02) { zonaOrdenada = 2; blinkRed = false; }
+        else if (camino == 0x03) { zonaOrdenada = 3; blinkGreen = false; }
+        else if (camino == 0x00) { zonaOrdenada = 0; }
+        break;
+
+      // ZONA 2:
+      // - si veu 01 => Z1 + HOLD + leds off (blink off)
+      // - si veu altre => queda a Z2 i activa blink vermell
+      case 2:
+        if (camino == 0x01) {
+          blinkRed = false;
+          zonaOrdenada = 1;
+          startHold(HOLD_MS);
+        } else {
+          blinkRed = true;   // tag raro
+        }
+        break;
+
+      // ZONA 3:
+      // - si veu 01 => Z1 + HOLD + leds off (blink off)
+      // - si veu altre => queda a Z3 i activa blink verd
+      case 3:
+        if (camino == 0x01) {
+          blinkGreen = false;
+          zonaOrdenada = 1;
+          startHold(HOLD_MS);
+        } else {
+          blinkGreen = true; // tag raro
+        }
+        break;
+    }
+
+    Serial.print("RX -> ");
+    Serial.print(msgMega);
+    Serial.print(" | camino=0x");
     if (camino < 0x10) Serial.print("0");
-    Serial.println(camino, HEX);
+    Serial.print(camino, HEX);
+    Serial.print(" | zonaOrdenada=");
+    Serial.print(zonaOrdenada);
+    Serial.print(" | blinkR=");
+    Serial.print(blinkRed ? "1" : "0");
+    Serial.print(" | blinkG=");
+    Serial.print(blinkGreen ? "1" : "0");
+    Serial.print(" | hold=");
+    Serial.println(inHold() ? "YES" : "NO");
   }
 }
 
-
-
 // ================= SETUP =================
-
 void setup() {
   Serial.begin(9600);
   Serial1.begin(9600);
 
   BLE.begin();
-
-  Serial.println("KUKI INICIADO");
+  Serial.println("RP2040 READY");
   BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
 
   pinMode(selectorModoBLT, INPUT);
@@ -253,18 +357,17 @@ void setup() {
   pinMode(Luz_blutuch, OUTPUT);
   pinMode(Luz_ROJO, OUTPUT);
 
-  // Sensores (HIGH = activo)
   pinMode(PinSensor1, INPUT);
   pinMode(PinSensor2, INPUT);
   pinMode(PinSensor3, INPUT);
   pinMode(PinSensor4, INPUT);
   pinMode(PinSensor5, INPUT);
+
+  setLeds(false, false);
 }
 
 // ================= LOOP =================
-
 void loop() {
-
   COMSBLT = digitalRead(selectorModoBLT);
   digitalWrite(Luz_blutuch, COMSBLT ? HIGH : LOW);
 
@@ -272,29 +375,47 @@ void loop() {
 
   // ----- MODO BLE -----
   if (peripheral && COMSBLT) {
-    if (peripheral.localName().indexOf("Mando Kuki") < 0) {
-      return;
-    }
+    if (peripheral.localName().indexOf("Mando Kuki") < 0) return;
 
     BLE.stopScan();
     prog(peripheral);
     BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
+    return;
   }
 
   // ----- MODO SENSORES -----
-  else if (!COMSBLT) {
-
-    if (millis() >= tiempoActualLectura + tiempoPeriodoLectura) {
+  if (!COMSBLT) {
+    if (millis() - tiempoActualLectura >= (unsigned long)tiempoPeriodoLectura) {
       tiempoActualLectura = millis();
 
+      // 1) RFID
       leerMega();
 
+      // 2) LEDs segons estat
+      updateLeds();
+
+      // 3) Direcció
       dir = lecturaSensor();
 
-      // Si dir == 'o' -> rápido; si no -> lento
-      int vOut = (dir == 'o') ? velRecto : velGiro;
+      // 4) Vel
+      int vMove = (dir == 'o') ? velRecto : velGiro;
 
-      sendCmd(zonaRecibida, dir, vOut);
+      int vOut = vMove;
+      char dirOut = dir;
+
+      // HOLD o ZONA 0 => STOP
+      if (inHold() || zonaOrdenada == 0) {
+        dirOut = 'n';
+        vOut = 0;
+      }
+      // ZONA 2/3: si NO és retorn (0x01) => STOP
+      else if ((zonaOrdenada == 2 || zonaOrdenada == 3) && camino != 0x01) {
+        dirOut = 'n';
+        vOut = 0;
+      }
+
+      sendCmd(zonaOrdenada, dirOut, vOut);
+      Serial.println(dir);
     }
   }
 }
