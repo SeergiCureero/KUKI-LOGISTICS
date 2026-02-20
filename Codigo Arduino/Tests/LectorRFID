@@ -1,7 +1,16 @@
+#include <SPI.h>
+#include <MFRC522.h>
+#include <NewPing.h>
+
+
+#define RST_PIN 48
+#define SS_PIN 53
+MFRC522 mfrc522(SS_PIN, RST_PIN);
+
 // ===== RFID DUMP / INTERACTIU =====
 MFRC522::MIFARE_Key keyA;
-bool cardDumpDone = false;   // per fer dump 1 cop per targeta (o per "sessió")
-bool interactiveEnabled = true; // per activar comandes via Serial
+bool cardDumpDone = false;
+bool interactiveEnabled = true;
 
 static byte absBlock1K(byte sector, byte blockInSector) {
   return (byte)(sector * 4 + blockInSector);
@@ -17,7 +26,7 @@ static void printHex2(byte b) {
 }
 
 static bool authBlock(byte blockAbs) {
-  auto st = mfrc522.PCD_Authenticate(
+  MFRC522::StatusCode st = mfrc522.PCD_Authenticate(
     MFRC522::PICC_CMD_MF_AUTH_KEY_A,
     blockAbs,
     &keyA,
@@ -29,8 +38,10 @@ static bool authBlock(byte blockAbs) {
 static bool readBlock16(byte blockAbs, byte out16[16]) {
   byte buffer[18];
   byte size = sizeof(buffer);
-  auto st = mfrc522.MIFARE_Read(blockAbs, buffer, &size);
+
+  MFRC522::StatusCode st = mfrc522.MIFARE_Read(blockAbs, buffer, &size);
   if (st != MFRC522::STATUS_OK) return false;
+
   for (byte i = 0; i < 16; i++) out16[i] = buffer[i];
   return true;
 }
@@ -80,7 +91,6 @@ static void dumpCardClassic1K(bool skipTrailers) {
       Serial.print("S"); Serial.print(sector);
       Serial.print(" B"); Serial.print(bIn);
       Serial.print(" (abs "); Serial.print(bAbs); Serial.print(") : ");
-
       for (byte i = 0; i < 16; i++) {
         printHex2(data16[i]);
         if (i != 15) Serial.print(" ");
@@ -103,10 +113,6 @@ static void printHelp() {
   Serial.println("  B <S> <B>         -> read one block (16 bytes)");
   Serial.println("  S <S>             -> read one sector (data blocks; trailers skipped)");
   Serial.println();
-  Serial.println("Examples:");
-  Serial.println("  R 1 2 8");
-  Serial.println("  B 1 2");
-  Serial.println("  S 1");
 }
 
 static void interactiveRFID() {
@@ -133,7 +139,6 @@ static void interactiveRFID() {
   }
 
   int s = -1, b = -1, by = -1;
-  char c0 = 0;
 
   if (sscanf(up.c_str(), "R %d %d %d", &s, &b, &by) == 3) {
     if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
@@ -207,6 +212,7 @@ static void interactiveRFID() {
       if (isTrailerBlock1K(bIn)) continue;
 
       byte bAbs = absBlock1K((byte)s, bIn);
+
       if (!authBlock(bAbs)) {
         Serial.print("B"); Serial.print(bIn); Serial.println(": AUTH FAIL");
         haltStop();
@@ -234,4 +240,17 @@ static void interactiveRFID() {
   }
 
   Serial.println("Unknown command. Type HELP.");
+}
+
+void RFID_DumpOnceOnDetect() {
+  if (cardDumpDone) return;
+
+  if (!mfrc522.PICC_IsNewCardPresent()) return;
+  if (!mfrc522.PICC_ReadCardSerial()) return;
+
+  dumpCardClassic1K(true);
+  printHelp();
+
+  cardDumpDone = true;
+  haltStop();
 }
