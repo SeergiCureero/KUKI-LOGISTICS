@@ -8,8 +8,10 @@ char dir = 'n';
 const uint8_t MAX_MISS = 10;
 
 // Velocitats (0..255)
-int velRecto = 200;
-int velGiro  = 120;
+int velRecto = 124;
+int velGiro1  = 32;
+int velGiro2  = 48;
+int velGiro3  = 64;
 
 // Tiempos
 int tiempoPeriodoLectura = 100;
@@ -192,24 +194,6 @@ void prog(BLEDevice peripheral) {
         else if (valX < -t) dir = 'e';
         else if (valY > t) dir = 'g';
         else if (valY < -t) dir = 'c';
-
-        int vMove = (dir == 'o') ? velRecto : velGiro;
-
-        int vOut = vMove;
-        char dirOut = dir;
-
-        // HOLD o ZONA 0 => STOP
-        if (inHold() || zonaOrdenada == 0) {
-          dirOut = 'n';
-          vOut = 0;
-        }
-        // ZONA 2/3: si NO és retorn (0x01) => STOP
-        else if ((zonaOrdenada == 2 || zonaOrdenada == 3) && camino != 0x01) {
-          dirOut = 'n';
-          vOut = 0;
-        }
-
-        sendCmd(zonaOrdenada, dirOut, vOut);
       }
     }
 
@@ -232,8 +216,8 @@ char lecturaSensor() {
   bool sensor4 = digitalRead(PinSensor4);
   bool sensor5 = digitalRead(PinSensor5);
 
-  if (sensor3 && sensor4 && sensor5) {
-    if (zonaRecibida == 3) direccion = 'q';
+  if (zonaRecibida == 3 && sensor5) {
+    direccion = 's';
   } else if (sensor1 && sensor2) {
     direccion = 'l';
   } else if (sensor3 && sensor4) {
@@ -398,24 +382,41 @@ void loop() {
       dir = lecturaSensor();
 
       // 4) Vel
-      int vMove = (dir == 'o') ? velRecto : velGiro;
-
-      int vOut = vMove;
+      //k l m n o p q r s
+      int vOut;
       char dirOut = dir;
+
+      if(dir=='o'){
+        vOut = velRecto;
+      }
+      else if((dir == 'n') || (dir == 'p')){
+        vOut = velGiro1;
+      }
+      else if((dir == 'm') || (dir == 'q')){
+        vOut = velGiro1;
+      }
+      else if((dir == 'l') || (dir == 'r')){
+        vOut = velGiro2;
+      }
+      else if((dir == 'k') || (dir == 's')){
+        vOut = velGiro3;
+      }
+
+     
+      
 
       // HOLD o ZONA 0 => STOP
       if (inHold() || zonaOrdenada == 0) {
-        dirOut = 'n';
+        dirOut = 'z';
         vOut = 0;
       }
-      // ZONA 2/3: si NO és retorn (0x01) => STOP
-      else if ((zonaOrdenada == 2 || zonaOrdenada == 3) && camino != 0x01) {
-        dirOut = 'n';
-        vOut = 0;
-      }
-
       sendCmd(zonaOrdenada, dirOut, vOut);
-      Serial.println(dir);
+      Serial.print("Dir: ");
+      Serial.print(dirOut);
+      Serial.print("    Vel: ");
+      Serial.print(vOut);
+      Serial.print("    Zona: ");
+      Serial.println(zonaOrdenada);
     }
   }
 }
