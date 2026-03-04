@@ -1,18 +1,5 @@
 #include <ArduinoBLE.h>
 
-// ================= VARIABLES =================
-String msg;   // compat/debug
-char dir = 'n';
-
-// Cuantas lecturas seguidas sin linea toleramos
-const uint8_t MAX_MISS = 10;
-
-// Velocitats (0..255)
-int velRecto = 124;
-int velGiro1  = 32;
-int velGiro2  = 48;
-int velGiro3  = 64;
-
 // Tiempos
 int tiempoPeriodoLectura = 100;
 unsigned long tiempoActualLectura = 0;
@@ -37,18 +24,31 @@ bool COMSBLT = false;
 #define PinSensor4 11
 #define PinSensor5 12
 
+// ================= PID LINE FOLLOW =================
+
+float Kp = 35.0;
+float Ki = 0.0;
+float Kd = 12.0;
+
+float pidIntegral = 0;
+float lastError = 0;
+
+int baseSpeed = 120;
+
+unsigned long lastPID = 0;
+
 // ===== Comunicación MEGA =====
 String msgMega = "";
 uint8_t camino = 0x00;
-uint8_t zonaRecibida = 0;     // feedback del MEGA (Zx:yy)
+uint8_t zonaRecibida = 0;  // feedback del MEGA (Zx:yy)
 
 // ✅ estat intern (comença en ZONA 0)
 uint8_t zonaOrdenada = 0;
 
 // ================= LED / HOLD CONTROL =================
-static const uint32_t PITSTEP_MS = 500;   // zona 0: 0.5s verd / 0.5s vermell
-static const uint32_t BLINK_MS   = 250;   // blink (error)
-static const uint32_t HOLD_MS    = 2000;  // stop 2s quan camí=0x01 a Z2/Z3
+static const uint32_t PITSTEP_MS = 500;  // zona 0: 0.5s verd / 0.5s vermell
+static const uint32_t BLINK_MS = 250;    // blink (error)
+static const uint32_t HOLD_MS = 2000;    // stop 2s quan camí=0x01 a Z2/Z3
 
 unsigned long holdUntil = 0;
 
@@ -56,8 +56,12 @@ unsigned long holdUntil = 0;
 bool blinkRed = false;
 bool blinkGreen = false;
 
-static inline bool inHold() { return millis() < holdUntil; }
-static inline void startHold(unsigned long ms) { holdUntil = millis() + ms; }
+static inline bool inHold() {
+  return millis() < holdUntil;
+}
+static inline void startHold(unsigned long ms) {
+  holdUntil = millis() + ms;
+}
 
 // ================= UART1 LINE READER (NO BLOQUEJANT) =================
 static bool readLineSerial1(String &out) {
@@ -77,25 +81,23 @@ static bool readLineSerial1(String &out) {
     }
 
     if (idx < sizeof(buf) - 1) buf[idx++] = c;
-    else idx = 0; // overflow -> reset
+    else idx = 0;  // overflow -> reset
   }
   return false;
 }
 
 // ===== helper: enviar como "<zona><dir><vel>\n" =====
-static void sendCmd(uint8_t z, char d, int v) {
-  if (z > 3) z = 3;         // permet 0..3
-  v = constrain(v, 0, 255);
+static void sendMotorSpeeds(int v1, int v2, int v3, int v4) {
 
-  char out[16];
-  snprintf(out, sizeof(out), "%d%c%d\n", (int)z, d, v);
+  char out[32];
+  snprintf(out, sizeof(out), "%d,%d,%d,%d\n", v1, v2, v3, v4);
   Serial1.print(out);
 }
 
 // ================= LEDS =================
 static void setLeds(bool green, bool red) {
   digitalWrite(Luz_VERDE, green ? HIGH : LOW);
-  digitalWrite(Luz_ROJO,  red   ? HIGH : LOW);
+  digitalWrite(Luz_ROJO, red ? HIGH : LOW);
 }
 
 static void updateLeds() {
@@ -109,7 +111,7 @@ static void updateLeds() {
   if (zonaOrdenada == 0) {
     uint32_t phase = (millis() / PITSTEP_MS) % 2;
     if (phase == 0) setLeds(true, false);
-    else            setLeds(false, true);
+    else setLeds(false, true);
     return;
   }
 
@@ -137,6 +139,82 @@ static void updateLeds() {
 
   // ZONA 1: leds OFF
   setLeds(false, false);
+}
+
+float readLinePosition() {
+
+  int s1 = digitalRead(PinSensor1);
+  int s2 = digitalRead(PinSensor2);
+  int s3 = digitalRead(PinSensor3);
+  int s4 = digitalRead(PinSensor4);
+  int s5 = digitalRead(PinSensor5);
+
+  int weights[5] = { -2, -1, 0, 1, 2 };
+  int sensors[5] = { s1, s2, s3, s4, s5 };
+
+  int sum = 0;
+  int count = 0;
+
+  for (int i = 0; i < 5; i++) {
+    if (sensors[i]) {
+      sum += weights[i];
+      count++;
+    }
+  }
+
+  if (count == 0) {
+    return lastError;
+  }
+
+  return (float)sum / count;
+}
+
+float computePID(float error) {
+
+  unsigned long now = millis();
+  float dt = (now - lastPID) / 1000.0;
+
+  if (dt <= 0) dt = 0.001;
+
+  lastPID = now;
+
+  pidIntegral += error * dt;
+  pidIntegral = constrain(pidIntegral, -50, 50);
+
+  float derivative = (error - lastError) / dt;
+
+  float output = Kp * error + Ki * pidIntegral + Kd * derivative;
+
+  lastError = error;
+
+  return output;
+}
+
+void computeMotorSpeeds(int &m1, int &m2, int &m3, int &m4) {
+
+  float pos = readLinePosition();
+
+  float error = pos;
+
+  float turn = computePID(error);
+
+  // Reduir velocitat quan el gir és gran
+  int speed = baseSpeed - abs(turn) * 0.4;
+  speed = constrain(speed, 60, baseSpeed);
+
+  int left = speed - turn;
+  int right = speed + turn;
+
+  left = constrain(left, -255, 255);
+  right = constrain(right, -255, 255);
+
+  // Motors esquerra
+  m1 = left;
+  m3 = left;
+
+  // Motors dreta
+  m2 = right;
+  m4 = right;
 }
 
 // ================= BLE =================
@@ -184,16 +262,6 @@ void prog(BLEDevice peripheral) {
         memcpy(&valVel, bv, 4);
 
         float t = 0.2f;
-
-        if (abs(valX) < t && abs(valY) < t) dir = 'n';
-        else if (valX > t && valY > t) dir = 'h';
-        else if (valX > t && valY < -t) dir = 'b';
-        else if (valX < -t && valY > t) dir = 'f';
-        else if (valX < -t && valY < -t) dir = 'd';
-        else if (valX > t) dir = 'a';
-        else if (valX < -t) dir = 'e';
-        else if (valY > t) dir = 'g';
-        else if (valY < -t) dir = 'c';
       }
     }
 
@@ -201,50 +269,6 @@ void prog(BLEDevice peripheral) {
   }
 
   Serial.println("BLE desconectado");
-}
-
-// ================= SENSORES =================
-char lecturaSensor() {
-  static char ultimaDirValida = 'z';
-  static uint8_t missCount = 0;
-
-  char direccion = 'z';
-
-  bool sensor1 = digitalRead(PinSensor1);
-  bool sensor2 = digitalRead(PinSensor2);
-  bool sensor3 = digitalRead(PinSensor3);
-  bool sensor4 = digitalRead(PinSensor4);
-  bool sensor5 = digitalRead(PinSensor5);
-
-  if (zonaRecibida == 3 && sensor5) {
-    direccion = 's';
-  } else if (sensor1 && sensor2) {
-    direccion = 'l';
-  } else if (sensor3 && sensor4) {
-    direccion = 'p';
-  } else if (sensor4 && sensor5) {
-    direccion = 'r';
-  } else if (sensor1) {
-    direccion = 'k';
-  } else if (sensor2) {
-    direccion = 'm';
-  } else if (sensor3) {
-    direccion = 'o';
-  } else if (sensor4) {
-    direccion = 'q';
-  } else if (sensor5) {
-    direccion = 's';
-  }
-
-  if (direccion != 'z') {
-    ultimaDirValida = direccion;
-    missCount = 0;
-    return direccion;
-  }
-
-  missCount++;
-  if (missCount < MAX_MISS) return ultimaDirValida;
-  return 'z';
 }
 
 // ================= LEER MEGA (RFID) =================
@@ -270,15 +294,26 @@ void leerMega() {
 
       // ZONA 0: només surt si veu 02 o 03
       case 0:
-        if (camino == 0x02) { zonaOrdenada = 2; blinkRed = false; }
-        else if (camino == 0x03) { zonaOrdenada = 3; blinkGreen = false; }
+        if (camino == 0x02) {
+          zonaOrdenada = 2;
+          blinkRed = false;
+        } else if (camino == 0x03) {
+          zonaOrdenada = 3;
+          blinkGreen = false;
+        }
         break;
 
       // ZONA 1: 02->2, 03->3, 00->0
       case 1:
-        if (camino == 0x02) { zonaOrdenada = 2; blinkRed = false; }
-        else if (camino == 0x03) { zonaOrdenada = 3; blinkGreen = false; }
-        else if (camino == 0x00) { zonaOrdenada = 0; }
+        if (camino == 0x02) {
+          zonaOrdenada = 2;
+          blinkRed = false;
+        } else if (camino == 0x03) {
+          zonaOrdenada = 3;
+          blinkGreen = false;
+        } else if (camino == 0x00) {
+          zonaOrdenada = 0;
+        }
         break;
 
       // ZONA 2:
@@ -290,7 +325,7 @@ void leerMega() {
           zonaOrdenada = 1;
           startHold(HOLD_MS);
         } else {
-          blinkRed = true;   // tag raro
+          blinkRed = true;  // tag raro
         }
         break;
 
@@ -303,7 +338,7 @@ void leerMega() {
           zonaOrdenada = 1;
           startHold(HOLD_MS);
         } else {
-          blinkGreen = true; // tag raro
+          blinkGreen = true;  // tag raro
         }
         break;
     }
@@ -352,71 +387,61 @@ void setup() {
 
 // ================= LOOP =================
 void loop() {
+
   COMSBLT = digitalRead(selectorModoBLT);
   digitalWrite(Luz_blutuch, COMSBLT ? HIGH : LOW);
 
   BLEDevice peripheral = BLE.available();
 
-  // ----- MODO BLE -----
+  // ===== MODO BLE =====
   if (peripheral && COMSBLT) {
+
     if (peripheral.localName().indexOf("Mando Kuki") < 0) return;
 
     BLE.stopScan();
     prog(peripheral);
     BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
+
     return;
   }
 
-  // ----- MODO SENSORES -----
+  // ===== MODO AUTONOMO (SENSORES) =====
   if (!COMSBLT) {
+
     if (millis() - tiempoActualLectura >= (unsigned long)tiempoPeriodoLectura) {
+
       tiempoActualLectura = millis();
 
-      // 1) RFID
+      // 1️⃣ Leer RFID / estado desde MEGA
       leerMega();
 
-      // 2) LEDs segons estat
+      // 2️⃣ Actualizar LEDs
       updateLeds();
 
-      // 3) Direcció
-      dir = lecturaSensor();
-
-      // 4) Vel
-      //k l m n o p q r s
-      int vOut;
-      char dirOut = dir;
-
-      if(dir=='o'){
-        vOut = velRecto;
-      }
-      else if((dir == 'n') || (dir == 'p')){
-        vOut = velGiro1;
-      }
-      else if((dir == 'm') || (dir == 'q')){
-        vOut = velGiro1;
-      }
-      else if((dir == 'l') || (dir == 'r')){
-        vOut = velGiro2;
-      }
-      else if((dir == 'k') || (dir == 's')){
-        vOut = velGiro3;
-      }
-
-     
-      
-
-      // HOLD o ZONA 0 => STOP
+      // 3️⃣ HOLD o zona 0 → robot parado
       if (inHold() || zonaOrdenada == 0) {
-        dirOut = 'z';
-        vOut = 0;
+
+        sendMotorSpeeds(0, 0, 0, 0);
+
+        Serial.println("STOP");
+
+      } else {
+
+        int m1, m2, m3, m4;
+
+        computeMotorSpeeds(m1, m2, m3, m4);
+
+        sendMotorSpeeds(m1, m2, m3, m4);
+
+        Serial.print("Motors: ");
+        Serial.print(m1);
+        Serial.print(",");
+        Serial.print(m2);
+        Serial.print(",");
+        Serial.print(m3);
+        Serial.print(",");
+        Serial.println(m4);
       }
-      sendCmd(zonaOrdenada, dirOut, vOut);
-      Serial.print("Dir: ");
-      Serial.print(dirOut);
-      Serial.print("    Vel: ");
-      Serial.print(vOut);
-      Serial.print("    Zona: ");
-      Serial.println(zonaOrdenada);
     }
   }
 }
