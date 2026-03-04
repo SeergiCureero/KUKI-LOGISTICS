@@ -1,41 +1,37 @@
 #include <ArduinoBLE.h>
 
-// Tiempos
+// ================= TIEMPOS =================
 int tiempoPeriodoLectura = 100;
 unsigned long tiempoActualLectura = 0;
 
-// Pines control
+// ================= PINES CONTROL =================
 #define selectorModoBLT 2
 #define botonStart 3
 #define botonStop 4
 
-// Leds
+// ================= LEDS =================
 #define Luz_VERDE 5
 #define Luz_ROJO 6
 #define Luz_blutuch 7
 
-
 bool COMSBLT = false;
 
-// Pines sensores
+// ================= SENSORES (REED / LINEA) =================
 #define PinSensor1 8
 #define PinSensor2 9
 #define PinSensor3 10
 #define PinSensor4 11
 #define PinSensor5 12
 
-// ===== CONTROL BIFURCACIONES =====
-
+// ================= CONTROL BIFURCACIONES =================
 bool turning = false;
 unsigned long turnUntil = 0;
-
 unsigned long lastIntersection = 0;
 
 const int TURN_SPEED = 150;
-const int TURN_TIME = 400;
+const int TURN_TIME  = 400;
 
 // ================= PID LINE FOLLOW =================
-
 float Kp = 35.0;
 float Ki = 0.0;
 float Kd = 12.0;
@@ -44,36 +40,21 @@ float pidIntegral = 0;
 float lastError = 0;
 
 int baseSpeed = 120;
-
 unsigned long lastPID = 0;
 
-// ===== Comunicación MEGA =====
+// ================= COMUNICACIÓN MEGA =================
 String msgMega = "";
-uint8_t camino = 0x00;
-uint8_t zonaRecibida = 0;  // feedback del MEGA (Zx:yy)
+uint8_t camino = 0x00;      // YY (hex) recibido
+uint8_t zonaRecibida = 0;   // Zx recibido (0..3)
 
-// ✅ estat intern (comença en ZONA 0)
-uint8_t zonaOrdenada = 0;
+// ================= PARO INDEFINIDO (LATCH) =================
+bool paroIndef = false;
 
-// ================= LED / HOLD CONTROL =================
-static const uint32_t PITSTEP_MS = 500;  // zona 0: 0.5s verd / 0.5s vermell
-static const uint32_t BLINK_MS = 250;    // blink (error)
-static const uint32_t HOLD_MS = 2000;    // stop 2s quan camí=0x01 a Z2/Z3
+// ================= LED TIMERS =================
+static const uint32_t PITSTEP_MS = 500; // Z0: alterna 0.5s
+static const uint32_t BLINK_MS   = 250; // paroIndef blink rojo
 
-unsigned long holdUntil = 0;
-
-// ✅ blink “latch” per estat
-bool blinkRed = false;
-bool blinkGreen = false;
-
-static inline bool inHold() {
-  return millis() < holdUntil;
-}
-static inline void startHold(unsigned long ms) {
-  holdUntil = millis() + ms;
-}
-
-// ================= UART1 LINE READER (NO BLOQUEJANT) =================
+// ================= UART1 LINE READER (NO BLOQUEANTE) =================
 static bool readLineSerial1(String &out) {
   static char buf[32];
   static uint8_t idx = 0;
@@ -91,14 +72,16 @@ static bool readLineSerial1(String &out) {
     }
 
     if (idx < sizeof(buf) - 1) buf[idx++] = c;
-    else idx = 0;  // overflow -> reset
+    else {
+      // overflow: resetea para no mezclar basura
+      idx = 0;
+    }
   }
   return false;
 }
 
-// ===== helper: enviar como "<zona><dir><vel>\n" =====
+// ================= ENVIAR MOTORES A MEGA =================
 static void sendMotorSpeeds(int v1, int v2, int v3, int v4) {
-
   char out[32];
   snprintf(out, sizeof(out), "%d,%d,%d,%d\n", v1, v2, v3, v4);
   Serial1.print(out);
@@ -107,52 +90,43 @@ static void sendMotorSpeeds(int v1, int v2, int v3, int v4) {
 // ================= LEDS =================
 static void setLeds(bool green, bool red) {
   digitalWrite(Luz_VERDE, green ? HIGH : LOW);
-  digitalWrite(Luz_ROJO, red ? HIGH : LOW);
+  digitalWrite(Luz_ROJO,  red   ? HIGH : LOW);
 }
 
 static void updateLeds() {
-  // HOLD: leds OFF i ja
-  if (inHold()) {
-    setLeds(false, false);
+  // 1) Paro indefinido: blink rojo
+  if (paroIndef) {
+    bool on = ((millis() / BLINK_MS) % 2) == 0;
+    setLeds(false, on);
     return;
   }
 
-  // ZONA 0: alterna verd/vermell 0.5s/0.5s
-  if (zonaOrdenada == 0) {
+  // 2) Zona 0: alterna verde/rojo
+  if (zonaRecibida == 0) {
     uint32_t phase = (millis() / PITSTEP_MS) % 2;
     if (phase == 0) setLeds(true, false);
-    else setLeds(false, true);
+    else            setLeds(false, true);
     return;
   }
 
-  // ZONA 2: per defecte FIX vermell, si blinkRed => blink vermell
-  if (zonaOrdenada == 2) {
-    if (blinkRed) {
-      bool on = ((millis() / BLINK_MS) % 2) == 0;
-      setLeds(false, on);
-    } else {
-      setLeds(false, true);
-    }
+  // 3) Zona 2: rojo fijo
+  if (zonaRecibida == 2) {
+    setLeds(false, true);
     return;
   }
 
-  // ZONA 3: per defecte FIX verd, si blinkGreen => blink verd
-  if (zonaOrdenada == 3) {
-    if (blinkGreen) {
-      bool on = ((millis() / BLINK_MS) % 2) == 0;
-      setLeds(on, false);
-    } else {
-      setLeds(true, false);
-    }
+  // 4) Zona 3: verde fijo
+  if (zonaRecibida == 3) {
+    setLeds(true, false);
     return;
   }
 
-  // ZONA 1: leds OFF
+  // 5) Zona 1 (o cualquier otra): leds apagados
   setLeds(false, false);
 }
 
+// ================= LINE POSITION =================
 float readLinePosition() {
-
   int s1 = digitalRead(PinSensor1);
   int s2 = digitalRead(PinSensor2);
   int s3 = digitalRead(PinSensor3);
@@ -172,34 +146,42 @@ float readLinePosition() {
     }
   }
 
-  if (count == 0) {
-    return lastError;
-  }
+  // Si no ve nada, devolvemos el último error, pero OJO:
+  // El paro real por "no sensores" lo hacemos ANTES en computeMotorSpeeds().
+  if (count == 0) return lastError;
 
   return (float)sum / count;
 }
 
+// ================= PID =================
 float computePID(float error) {
-
   unsigned long now = millis();
-  float dt = (now - lastPID) / 1000.0;
 
-  if (dt <= 0) dt = 0.001;
+  // Primera vez: evita dt gigante
+  if (lastPID == 0) {
+    lastPID = now;
+    lastError = error;
+    pidIntegral = 0;
+    return 0;
+  }
 
+  float dt = (now - lastPID) / 1000.0f;
   lastPID = now;
+
+  // Limita dt (por si hay parones)
+  if (dt < 0.001f) dt = 0.001f;
+  if (dt > 0.100f) dt = 0.100f;
 
   pidIntegral += error * dt;
   pidIntegral = constrain(pidIntegral, -50, 50);
 
   float derivative = (error - lastError) / dt;
-
-  float output = Kp * error + Ki * pidIntegral + Kd * derivative;
-
   lastError = error;
 
-  return output;
+  return Kp * error + Ki * pidIntegral + Kd * derivative;
 }
 
+// ================= MOTORES (PID + BIFURCACIÓN) =================
 void computeMotorSpeeds(int &m1, int &m2, int &m3, int &m4) {
 
   int s1 = digitalRead(PinSensor1);
@@ -210,138 +192,66 @@ void computeMotorSpeeds(int &m1, int &m2, int &m3, int &m4) {
 
   int active = s1 + s2 + s3 + s4 + s5;
 
+  // ✅ REQUERIMIENTO: solo se mueve si detecta algo
+  if (active == 0) {
+    m1 = m2 = m3 = m4 = 0;
+    return;
+  }
+
   bool intersection = active >= 4;
-  bool branchRight = s4 && s5;
-  bool branchLeft  = s1 && s2;
+  bool branchRight  = s4 && s5;
+  bool branchLeft   = s1 && s2;
 
-  // ===== SI ESTEM GIRANT =====
-
+  // ===== SI ESTAMOS GIRANDO =====
   if (turning) {
-
     if (millis() < turnUntil) {
-
-      // GIR FORÇAT
-
-      m1 = TURN_SPEED;
-      m3 = TURN_SPEED;
-
-      m2 = -TURN_SPEED;
-      m4 = -TURN_SPEED;
-
+      // giro forzado (derecha por defecto aquí)
+      m1 =  TURN_SPEED; m3 =  TURN_SPEED;
+      m2 = -TURN_SPEED; m4 = -TURN_SPEED;
       return;
     }
-
     turning = false;
   }
 
-  // ===== DETECTAR BIFURCACIÓ =====
-
-  if (!turning && intersection && millis() - lastIntersection > 800) {
-
+  // ===== DETECTAR BIFURCACIÓN =====
+  if (!turning && intersection && (millis() - lastIntersection > 800)) {
     lastIntersection = millis();
 
+    // camino 0x03: derecha (si hay rama derecha)
     if (camino == 0x03 && branchRight) {
-
       turning = true;
       turnUntil = millis() + TURN_TIME;
 
-      m1 = TURN_SPEED;
-      m3 = TURN_SPEED;
-
-      m2 = -TURN_SPEED;
-      m4 = -TURN_SPEED;
-
+      m1 =  TURN_SPEED; m3 =  TURN_SPEED;
+      m2 = -TURN_SPEED; m4 = -TURN_SPEED;
       return;
     }
 
+    // camino 0x02: izquierda (si hay rama izquierda)
     if (camino == 0x02 && branchLeft) {
-
       turning = true;
       turnUntil = millis() + TURN_TIME;
 
-      m1 = -TURN_SPEED;
-      m3 = -TURN_SPEED;
-
-      m2 = TURN_SPEED;
-      m4 = TURN_SPEED;
-
+      m1 = -TURN_SPEED; m3 = -TURN_SPEED;
+      m2 =  TURN_SPEED; m4 =  TURN_SPEED;
       return;
     }
   }
 
   // ===== PID NORMAL =====
-
-  float pos = readLinePosition();
-
+  float pos   = readLinePosition();
   float error = pos;
 
   float turn = computePID(error);
 
-  int left = baseSpeed - turn;
-  int right = baseSpeed + turn;
+  int left  = baseSpeed - (int)turn;
+  int right = baseSpeed + (int)turn;
 
-  left = constrain(left, -255, 255);
+  left  = constrain(left,  -255, 255);
   right = constrain(right, -255, 255);
 
-  m1 = left;
-  m3 = left;
-
-  m2 = right;
-  m4 = right;
-}
-
-// ================= BLE =================
-void prog(BLEDevice peripheral) {
-  Serial.println("Conectando BLE...");
-
-  if (!peripheral.connect()) {
-    Serial.println("Error conexión");
-    return;
-  }
-
-  Serial.println("Conectado");
-
-  if (!peripheral.discoverAttributes()) {
-    Serial.println("Error atributos");
-    peripheral.disconnect();
-    return;
-  }
-
-  BLECharacteristic X = peripheral.characteristic("19b10001-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic Y = peripheral.characteristic("19b10002-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic Vel = peripheral.characteristic("19b10004-e8f2-537e-4f6c-d104768a1214");
-
-  if (!X || !Y || !Vel) {
-    Serial.println("Característica faltante");
-    peripheral.disconnect();
-    return;
-  }
-
-  while (peripheral.connected()) {
-    leerMega();
-    updateLeds();
-
-    if (X.canRead() && Y.canRead() && Vel.canRead()) {
-      uint8_t bx[4], by[4], bv[4];
-
-      int nx = X.readValue(bx, 4);
-      int ny = Y.readValue(by, 4);
-      int nv = Vel.readValue(bv, 4);
-
-      if (nx == 4 && ny == 4 && nv == 4) {
-        float valX, valY, valVel;
-        memcpy(&valX, bx, 4);
-        memcpy(&valY, by, 4);
-        memcpy(&valVel, bv, 4);
-
-        float t = 0.2f;
-      }
-    }
-
-    delay(100);
-  }
-
-  Serial.println("BLE desconectado");
+  m1 = left;  m3 = left;
+  m2 = right; m4 = right;
 }
 
 // ================= LEER MEGA (RFID) =================
@@ -351,7 +261,7 @@ void leerMega() {
 
   msgMega = line;
 
-  // Format: Zx:YY
+  // Formato: Zx:YY
   if (msgMega.length() >= 5 && msgMega[0] == 'Z' && msgMega[2] == ':') {
     uint8_t z = (uint8_t)(msgMega[1] - '0');
     if (z > 3) return;
@@ -362,73 +272,26 @@ void leerMega() {
     zonaRecibida = z;
     camino = nuevoCamino;
 
-    // ========= FSM + blink latch =========
-    switch (zonaOrdenada) {
-
-      // ZONA 0: només surt si veu 02 o 03
-      case 0:
-        if (camino == 0x02) {
-          zonaOrdenada = 2;
-          blinkRed = false;
-        } else if (camino == 0x03) {
-          zonaOrdenada = 3;
-          blinkGreen = false;
-        }
-        break;
-
-      // ZONA 1: 02->2, 03->3, 00->0
-      case 1:
-        if (camino == 0x02) {
-          zonaOrdenada = 2;
-          blinkRed = false;
-        } else if (camino == 0x03) {
-          zonaOrdenada = 3;
-          blinkGreen = false;
-        } else if (camino == 0x00) {
-          zonaOrdenada = 0;
-        }
-        break;
-
-      // ZONA 2:
-      // - si veu 01 => Z1 + HOLD + leds off (blink off)
-      // - si veu altre => queda a Z2 i activa blink vermell
-      case 2:
-        if (camino == 0x01) {
-          blinkRed = false;
-          zonaOrdenada = 1;
-          startHold(HOLD_MS);
-        } else {
-          blinkRed = true;  // tag raro
-        }
-        break;
-
-      // ZONA 3:
-      // - si veu 01 => Z1 + HOLD + leds off (blink off)
-      // - si veu altre => queda a Z3 i activa blink verd
-      case 3:
-        if (camino == 0x01) {
-          blinkGreen = false;
-          zonaOrdenada = 1;
-          startHold(HOLD_MS);
-        } else {
-          blinkGreen = true;  // tag raro
-        }
-        break;
+    // ✅ REQUERIMIENTO: en Z2 y Z3, si llega cualquier otra cosa ≠ 0x01 -> paro indefinido
+    if ((zonaRecibida == 2 || zonaRecibida == 3) && camino != 0x01) {
+      paroIndef = true;
     }
 
+    // ✅ Para quitar el paro: en Z2/Z3 cuando llegue 0x01
+    if ((zonaRecibida == 2 || zonaRecibida == 3) && camino == 0x01) {
+      paroIndef = false;
+    }
+
+    // Debug
     Serial.print("RX -> ");
     Serial.print(msgMega);
+    Serial.print(" | zona=");
+    Serial.print(zonaRecibida);
     Serial.print(" | camino=0x");
     if (camino < 0x10) Serial.print("0");
     Serial.print(camino, HEX);
-    Serial.print(" | zonaOrdenada=");
-    Serial.print(zonaOrdenada);
-    Serial.print(" | blinkR=");
-    Serial.print(blinkRed ? "1" : "0");
-    Serial.print(" | blinkG=");
-    Serial.print(blinkGreen ? "1" : "0");
-    Serial.print(" | hold=");
-    Serial.println(inHold() ? "YES" : "NO");
+    Serial.print(" | paroIndef=");
+    Serial.println(paroIndef ? "YES" : "NO");
   }
 }
 
@@ -437,8 +300,8 @@ void setup() {
   Serial.begin(9600);
   Serial1.begin(9600);
 
+  // BLE (no lo usamos, pero lo dejo inicializado por si está montado)
   BLE.begin();
-  Serial.println("RP2040 READY");
   BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
 
   pinMode(selectorModoBLT, INPUT);
@@ -456,65 +319,68 @@ void setup() {
   pinMode(PinSensor5, INPUT);
 
   setLeds(false, false);
+
+  // Estado inicial
+  zonaRecibida = 0;
+  camino = 0x00;
+  paroIndef = false;
+
+  Serial.println("RP2040 READY");
 }
 
 // ================= LOOP =================
 void loop() {
-
   COMSBLT = digitalRead(selectorModoBLT);
   digitalWrite(Luz_blutuch, COMSBLT ? HIGH : LOW);
 
-  BLEDevice peripheral = BLE.available();
-
-  // ===== MODO BLE =====
-  if (peripheral && COMSBLT) {
-
-    if (peripheral.localName().indexOf("Mando Kuki") < 0) return;
-
-    BLE.stopScan();
-    prog(peripheral);
-    BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
-
+  // ===== MODO BLE: IGNORADO =====
+  // Si quieres, aquí podrías devolver directamente.
+  if (COMSBLT) {
+    // No hacemos nada en BLE
+    // (si quieres que en BLE también esté parado, mandamos 0)
+    sendMotorSpeeds(0, 0, 0, 0);
+    updateLeds();
     return;
   }
 
-  // ===== MODO AUTONOMO (SENSORES) =====
-  if (!COMSBLT) {
+  // ===== MODO AUTÓNOMO =====
+  if (millis() - tiempoActualLectura >= (unsigned long)tiempoPeriodoLectura) {
+    tiempoActualLectura = millis();
 
-    if (millis() - tiempoActualLectura >= (unsigned long)tiempoPeriodoLectura) {
+    // 1) Leer RFID / estado desde MEGA
+    leerMega();
 
-      tiempoActualLectura = millis();
+    // 2) LEDs según estado
+    updateLeds();
 
-      // 1️⃣ Leer RFID / estado desde MEGA
-      leerMega();
-
-      // 2️⃣ Actualizar LEDs
-      updateLeds();
-
-      // 3️⃣ HOLD o zona 0 → robot parado
-      if (inHold() || zonaOrdenada == 0) {
-
-        sendMotorSpeeds(0, 0, 0, 0);
-
-        Serial.println("STOP");
-
-      } else {
-
-        int m1, m2, m3, m4;
-
-        computeMotorSpeeds(m1, m2, m3, m4);
-
-        sendMotorSpeeds(m1, m2, m3, m4);
-
-        Serial.print("Motors: ");
-        Serial.print(m1);
-        Serial.print(",");
-        Serial.print(m2);
-        Serial.print(",");
-        Serial.print(m3);
-        Serial.print(",");
-        Serial.println(m4);
-      }
+    // 3) Condición de parada general:
+    // - zona 0 -> parado
+    // - paroIndef -> parado
+    if (zonaRecibida == 0 || paroIndef) {
+      sendMotorSpeeds(0, 0, 0, 0);
+      Serial.print("STOP | zona=");
+      Serial.print(zonaRecibida);
+      Serial.print(" | paroIndef=");
+      Serial.println(paroIndef ? "YES" : "NO");
+      return;
     }
+
+    // 4) Si no está parado, calcular motores (pero computeMotorSpeeds ya frena si no detecta sensores)
+    int m1, m2, m3, m4;
+    computeMotorSpeeds(m1, m2, m3, m4);
+    sendMotorSpeeds(m1, m2, m3, m4);
+
+    Serial.print("Motors: ");
+    Serial.print(m1); Serial.print(",");
+    Serial.print(m2); Serial.print(",");
+    Serial.print(m3); Serial.print(",");
+    Serial.print(m4);
+    Serial.print(" | zona=");
+    Serial.print(zonaRecibida);
+    Serial.print(" | camino=0x");
+    if (camino < 0x10) Serial.print("0");
+    Serial.print(camino, HEX);
+    Serial.print(" | paroIndef=");
+    Serial.println(paroIndef ? "YES" : "NO");
   }
 }
