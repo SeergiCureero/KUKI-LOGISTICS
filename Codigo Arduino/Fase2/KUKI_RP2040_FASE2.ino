@@ -24,6 +24,16 @@ bool COMSBLT = false;
 #define PinSensor4 11
 #define PinSensor5 12
 
+// ===== CONTROL BIFURCACIONES =====
+
+bool turning = false;
+unsigned long turnUntil = 0;
+
+unsigned long lastIntersection = 0;
+
+const int TURN_SPEED = 150;
+const int TURN_TIME = 400;
+
 // ================= PID LINE FOLLOW =================
 
 float Kp = 35.0;
@@ -192,27 +202,90 @@ float computePID(float error) {
 
 void computeMotorSpeeds(int &m1, int &m2, int &m3, int &m4) {
 
+  int s1 = digitalRead(PinSensor1);
+  int s2 = digitalRead(PinSensor2);
+  int s3 = digitalRead(PinSensor3);
+  int s4 = digitalRead(PinSensor4);
+  int s5 = digitalRead(PinSensor5);
+
+  int active = s1 + s2 + s3 + s4 + s5;
+
+  bool intersection = active >= 4;
+  bool branchRight = s4 && s5;
+  bool branchLeft  = s1 && s2;
+
+  // ===== SI ESTEM GIRANT =====
+
+  if (turning) {
+
+    if (millis() < turnUntil) {
+
+      // GIR FORÇAT
+
+      m1 = TURN_SPEED;
+      m3 = TURN_SPEED;
+
+      m2 = -TURN_SPEED;
+      m4 = -TURN_SPEED;
+
+      return;
+    }
+
+    turning = false;
+  }
+
+  // ===== DETECTAR BIFURCACIÓ =====
+
+  if (!turning && intersection && millis() - lastIntersection > 800) {
+
+    lastIntersection = millis();
+
+    if (camino == 0x03 && branchRight) {
+
+      turning = true;
+      turnUntil = millis() + TURN_TIME;
+
+      m1 = TURN_SPEED;
+      m3 = TURN_SPEED;
+
+      m2 = -TURN_SPEED;
+      m4 = -TURN_SPEED;
+
+      return;
+    }
+
+    if (camino == 0x02 && branchLeft) {
+
+      turning = true;
+      turnUntil = millis() + TURN_TIME;
+
+      m1 = -TURN_SPEED;
+      m3 = -TURN_SPEED;
+
+      m2 = TURN_SPEED;
+      m4 = TURN_SPEED;
+
+      return;
+    }
+  }
+
+  // ===== PID NORMAL =====
+
   float pos = readLinePosition();
 
   float error = pos;
 
   float turn = computePID(error);
 
-  // Reduir velocitat quan el gir és gran
-  int speed = baseSpeed - abs(turn) * 0.4;
-  speed = constrain(speed, 60, baseSpeed);
-
-  int left = speed - turn;
-  int right = speed + turn;
+  int left = baseSpeed - turn;
+  int right = baseSpeed + turn;
 
   left = constrain(left, -255, 255);
   right = constrain(right, -255, 255);
 
-  // Motors esquerra
   m1 = left;
   m3 = left;
 
-  // Motors dreta
   m2 = right;
   m4 = right;
 }
