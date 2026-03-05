@@ -32,7 +32,8 @@ bool paradaEmergencia = false;
 #define DISTANCIA_PARADA 25
 
 // ================= ZONA / RFID CONTROL =================
-int zonaActual = 0; // IMPORTANT: zona que determina qué bloque/posición leer
+// IMPORTANT: ara aquesta zona la MANA la RP2040
+int zonaActual = 0;
 
 unsigned long ultimoEnvio = 0;
 const unsigned long intervaloRFID = 200;
@@ -91,93 +92,92 @@ void moveKUKI(char direccion, bool parada, int velPWM) {
   velPWM = constrain(velPWM, 0, 255);
 
   switch (direccion) {
-    case 'a':  // Adelante
-    case 'o':  // Adelante (alias)
+    case 'a':
+    case 'o':
       digitalWrite(motor1A, HIGH); digitalWrite(motor1B, LOW);
       digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
       digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
       digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
       break;
 
-    case 'b':  // Diagonal ++
+    case 'b':
       digitalWrite(motor1A, LOW);  digitalWrite(motor1B, LOW);
       digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
       digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
       digitalWrite(motor4A, LOW);  digitalWrite(motor4B, LOW);
       break;
 
-    case 'c':  // Derecha
+    case 'c':
       digitalWrite(motor1A, LOW);  digitalWrite(motor1B, HIGH);
       digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
       digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
       digitalWrite(motor4A, LOW);  digitalWrite(motor4B, HIGH);
       break;
 
-    case 'd':  // Diagonal +-
+    case 'd':
       digitalWrite(motor1A, LOW);  digitalWrite(motor1B, HIGH);
       digitalWrite(motor2A, LOW);  digitalWrite(motor2B, LOW);
       digitalWrite(motor3A, LOW);  digitalWrite(motor3B, LOW);
       digitalWrite(motor4A, LOW);  digitalWrite(motor4B, HIGH);
       break;
 
-    case 'e':  // Atras
+    case 'e':
       digitalWrite(motor1A, LOW); digitalWrite(motor1B, HIGH);
       digitalWrite(motor2A, LOW); digitalWrite(motor2B, HIGH);
       digitalWrite(motor3A, LOW); digitalWrite(motor3B, HIGH);
       digitalWrite(motor4A, LOW); digitalWrite(motor4B, HIGH);
       break;
 
-    case 'f':  // Diagonal --
+    case 'f':
       digitalWrite(motor1A, LOW); digitalWrite(motor1B, LOW);
       digitalWrite(motor2A, LOW); digitalWrite(motor2B, HIGH);
       digitalWrite(motor3A, LOW); digitalWrite(motor3B, HIGH);
       digitalWrite(motor4A, LOW); digitalWrite(motor4B, LOW);
       break;
 
-    case 'g':  // Izquierda
+    case 'g':
       digitalWrite(motor1A, HIGH); digitalWrite(motor1B, LOW);
       digitalWrite(motor2A, LOW);  digitalWrite(motor2B, HIGH);
       digitalWrite(motor3A, LOW);  digitalWrite(motor3B, HIGH);
       digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
       break;
 
-    case 'h':  // Diagonal -+
+    case 'h':
       digitalWrite(motor1A, HIGH); digitalWrite(motor1B, LOW);
       digitalWrite(motor2A, LOW);  digitalWrite(motor2B, LOW);
       digitalWrite(motor3A, LOW);  digitalWrite(motor3B, LOW);
       digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
       break;
 
-    case 'i':  // Giro izquierdas
+    case 'i':
       digitalWrite(motor1A, LOW);  digitalWrite(motor1B, HIGH);
       digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
       digitalWrite(motor3A, LOW);  digitalWrite(motor3B, HIGH);
       digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
       break;
 
-    case 'j':  // Giro derechas
+    case 'j':
       digitalWrite(motor1A, LOW);  digitalWrite(motor1B, HIGH);
       digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
       digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
       digitalWrite(motor4A, LOW);  digitalWrite(motor4B, HIGH);
       break;
 
-    // k..s (tu tens molts casos que en realitat fan el mateix)
-    case 'k': case 'l': case 'm': case 'n': // variants esquerra
+    case 'k': case 'l': case 'm': case 'n':
       digitalWrite(motor1A, HIGH); digitalWrite(motor1B, LOW);
       digitalWrite(motor2A, LOW);  digitalWrite(motor2B, LOW);
       digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
       digitalWrite(motor4A, LOW);  digitalWrite(motor4B, LOW);
       break;
 
-    case 'p': case 'q': case 'r': case 's': // variants dreta
+    case 'p': case 'q': case 'r': case 's':
       digitalWrite(motor1A, LOW);  digitalWrite(motor1B, LOW);
       digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
       digitalWrite(motor3A, LOW);  digitalWrite(motor3B, LOW);
       digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
       break;
 
-    default: // 'z' o qualsevol altra
+    default:
       digitalWrite(motor1A, LOW); digitalWrite(motor1B, LOW);
       digitalWrite(motor2A, LOW); digitalWrite(motor2B, LOW);
       digitalWrite(motor3A, LOW); digitalWrite(motor3B, LOW);
@@ -256,7 +256,6 @@ void RFID() {
 
   byte valor = buffer[posicion];
 
-  // Enviar només si canvia zona/valor (o primera detecció)
   if (!tarjetaDetectada || zonaActual != lastZonaSent || valor != lastValorSent) {
     Serial1.print("Z");
     Serial1.print(zonaActual);
@@ -265,7 +264,7 @@ void RFID() {
     Serial1.print(valor, HEX);
     Serial1.println();
 
-    Serial.print("Z");
+    Serial.print("TX -> Z");
     Serial.print(zonaActual);
     Serial.print(":");
     if (valor < 0x10) Serial.print("0");
@@ -287,7 +286,6 @@ void setup() {
   Serial.begin(9600);
   Serial1.begin(9600);
 
-  // Motores
   pinMode(motor1A, OUTPUT);
   pinMode(motor1B, OUTPUT);
   pinMode(motor1Vel, OUTPUT);
@@ -301,41 +299,32 @@ void setup() {
   pinMode(motor4B, OUTPUT);
   pinMode(motor4Vel, OUTPUT);
 
-  // Ultrasonido
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
 
-  // RFID
   SPI.begin();
   mfrc522.PCD_Init();
 }
 
 // ================= LOOP =================
 void loop() {
-  // 1) Ultrasonido
   paradaEmergencia = (medirDistancia() <= DISTANCIA_PARADA);
 
-  // 2) Leer instrucciones de la RP2040 (no-bloqueante)
+  // 1) RX des de RP2040: "<zonaTarget><dir><vel>\n"
   String line;
   if (readLineSerial1(line)) {
     msg = line;
 
-    // Esperem: "<zona><dir><vel>"
-    // Ex: "2o80" o "3z0"
     if (msg.length() >= 3) {
       const char zc = msg[0];
       const char dcIn = msg[1];
       const int vIn = msg.substring(2).toInt();
 
-      int zParsed = -1;
-      if (zc >= '0' && zc <= '3') zParsed = (zc - '0');
-
-      // Si zona vàlida: actualitza zonaActual (important per RFID)
-      if (zParsed >= 0) zonaActual = zParsed;
+      // zonaTarget mana la RFID
+      if (zc >= '0' && zc <= '3') zonaActual = (zc - '0');
 
       vel = constrain(vIn, 0, 255);
 
-      // Regles de seguretat: si zona 0 o vel 0 => stop
       char dc = dcIn;
       if (zonaActual == 0 || vel == 0) dc = 'z';
 
@@ -343,17 +332,17 @@ void loop() {
 
       Serial.print("RX <- ");
       Serial.print(msg);
-      Serial.print(" | Dir: ");
+      Serial.print(" | zonaTarget=");
+      Serial.print(zonaActual);
+      Serial.print(" | dir=");
       Serial.print(dc);
-      Serial.print(" | Vel: ");
+      Serial.print(" | vel=");
       Serial.print(vel);
-      Serial.print(" | Parada: ");
-      Serial.print(paradaEmergencia ? "YES" : "NO");
-      Serial.print(" | ZonaActual: ");
-      Serial.println(zonaActual);
+      Serial.print(" | parada=");
+      Serial.println(paradaEmergencia ? "YES" : "NO");
     }
   }
 
-  // 3) RFID
+  // 2) RFID (usa zonaActual que ve de la RP2040)
   RFID();
 }
