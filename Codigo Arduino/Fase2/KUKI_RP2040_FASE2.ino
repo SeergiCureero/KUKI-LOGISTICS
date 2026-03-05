@@ -155,7 +155,7 @@ char lecturaSensor() {
 }
 
 // ================= LEER MEGA (RFID) =================
-static inline bool isStationTag(uint8_t t) { return t == 1 || t == 2 || t == 3; }
+static inline bool isStationTag(uint8_t t) { return t == 255 || t == 2 || t == 3; }
 
 static void applyTag(uint8_t tag) {
   if (!isStationTag(tag)) { tagLeido = 4; return; }
@@ -168,11 +168,11 @@ static void applyTag(uint8_t tag) {
 
   switch (camino) {
     case 2:
-      if (tag == 1) { camino = 1; tagLeido = 1; }
+      if (tag == 255) { camino = 1; tagLeido = 1; }
       else tagLeido = 4;
       break;
     case 3:
-      if (tag == 1) { camino = 1; tagLeido = 1; }
+      if (tag == 255) { camino = 1; tagLeido = 1; }
       else tagLeido = 4;
       break;
     case 1:
