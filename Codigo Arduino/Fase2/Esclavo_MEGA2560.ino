@@ -1,118 +1,68 @@
-/* Esclavo (MEGA2560) — con 3 ultrasonidos + LEDs + parada de emergencia */
-#include <SPI.h>
-#include <MFRC522.h>
+#include <ArduinoBLE.h>
 
-// ================= VARIABLES GENERALES =================
-String msg = "";
-int vel = 0;
+// ================= VARIABLES =================
+String msg;   // compat/debug
+char dir;
 
-// ================= VARIABLES MOTOR =================
-#define motor1A 2
-#define motor1B 3
-#define motor1Vel 4
-#define motor2A 5
-#define motor2B 6
-#define motor2Vel 7
-#define motor3A 8
-#define motor3B 9
-#define motor3Vel 10
-#define motor4A 11
-#define motor4B 12
-#define motor4Vel 13
+// Cuantas lecturas seguidas sin linea toleramos
+const uint8_t MAX_MISS = 10;
 
-// ================= VARIABLES RFID =================
-#define RST_PIN 48
-#define SS_PIN 53
-MFRC522 mfrc522(SS_PIN, RST_PIN);
+// Velocitats (0..255)
+int velRecto  = 80;
+int velGiro1  = 32;
+int velGiro2  = 48;
+int velGiro3  = 64;
 
-// ================= VARIABLES SENSORES ULTRASONICOS =================
-// NOTA: pines 22/23 ahora son del sensor 1 (igual que antes),
-//       se añaden sensor 2 (24/25) y sensor 3 (26/27)
-const int trigPins[3] = { 22, 24, 26 };
-const int echoPins[3] = { 23, 25, 27 };
-const int ledPins[3] = { 34, 33, 32 };
+// Tiempos
+int tiempoPeriodoLectura = 100;
+unsigned long tiempoActualLectura = 0;
 
-int distancias[3];
-unsigned long tiempoAnteriorLed[3] = { 0, 0, 0 };
-bool estadoLed[3] = { false, false, false };
+// Pines control
+#define selectorModoBLT 2
+#define botonStart 3
+#define botonStop 4
 
-bool paradaEmergencia = false;
+// Leds
+#define Luz_VERDE 5
+#define Luz_ROJO 6
+#define Luz_blutuch 7
 
-// Umbral de parada (cm) — LED fijo = muy cerca = peligro
-#define DISTANCIA_PARADA 15
+bool setRojo = false;
+bool setVerde = false;
 
-// ================= ZONA / RFID CONTROL =================
-int zonaActual = 0;
 
-unsigned long ultimoEnvio = 0;
-const unsigned long intervaloRFID = 200;
-bool tarjetaDetectada = false;
+bool COMSBLT = false;
 
-int lastZonaSent = -1;
-byte lastValorSent = 0x00;
+// Pines sensores
+#define PinSensor1 8
+#define PinSensor2 9
+#define PinSensor3 10
+#define PinSensor4 11
+#define PinSensor5 12
 
-// ================= ULTRASONIDO: medir distancia =================
-int medirDistancia(int trigPin, int echoPin) {
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-  long tiempo = pulseIn(echoPin, HIGH, 30000);
-  if (tiempo == 0) return 999;  // sin eco = libre
-  return (int)(tiempo * 0.034 / 2);
-}
+// ===== Comunicación MEGA =====
+String msgMega = "";
+uint8_t camino = 0x00;
+uint8_t zonaRecibida = 0;     // feedback del MEGA (Zx:yy)
 
-// ================= ULTRASONIDO: intervalo de parpadeo LED =================
-int calcularIntervalo(int distancia) {
-  if (distancia > 50) return -1;   // LED apagado
-  if (distancia > 30) return 800;  // parpadeo lento
-  if (distancia > 10) return 300;  // parpadeo rápido
-  return 0;                        // muy cerca → LED fijo (= parada)
-}
+// ✅ estat intern (comença en ZONA 0)
+uint8_t zonaOrdenada = 0;
 
-// ================= ULTRASONIDO: leer sensores + gestionar LEDs =================
-void actualizarUltrasonidos() {
-  unsigned long ahora = millis();
-  bool hayPeligro = false;
+// ================= LED / HOLD CONTROL =================
+static const uint32_t PITSTEP_MS = 500;   // zona 0: 0.5s verd / 0.5s vermell
+static const uint32_t BLINK_MS   = 250;   // blink (error)
+static const uint32_t HOLD_MS    = 2000;  // stop 2s quan camí=0x01 a Z2/Z3
 
-  for (int i = 0; i < 3; i++) {
-    distancias[i] = medirDistancia(trigPins[i], echoPins[i]);
+unsigned long holdUntil = 0;
 
-    int intervalo = calcularIntervalo(distancias[i]);
+// ✅ blink “latch” per estat
+bool blinkRed = false;
+bool blinkGreen = false;
 
-    if (intervalo == -1) {
-      // Libre: LED apagado
-      digitalWrite(ledPins[i], LOW);
-      estadoLed[i] = false;
-    } else if (intervalo == 0) {
-      // Muy cerca: LED fijo → PELIGRO
-      digitalWrite(ledPins[i], HIGH);
-      hayPeligro = true;
-    } else {
-      // Zona de aviso: parpadeo
-      if (ahora - tiempoAnteriorLed[i] >= (unsigned long)intervalo) {
-        tiempoAnteriorLed[i] = ahora;
-        estadoLed[i] = !estadoLed[i];
-        digitalWrite(ledPins[i], estadoLed[i]);
-      }
-    }
-  }
+static inline bool inHold() { return millis() < holdUntil; }
+static inline void startHold(unsigned long ms) { holdUntil = millis() + ms; }
 
-  // Actualizar flag de parada de emergencia
-  paradaEmergencia = hayPeligro;
-
-  // Si hay parada, detener motores inmediatamente
-  if (paradaEmergencia) {
-    analogWrite(motor1Vel, 0);
-    analogWrite(motor2Vel, 0);
-    analogWrite(motor3Vel, 0);
-    analogWrite(motor4Vel, 0);
-    Serial.println("⚠️  PARADA DE EMERGENCIA — obstáculo detectado");
-  }
-}
-
-// ================= UART1 LINE READER (NO BLOQUEANTE) =================
+// ================= UART1 LINE READER (NO BLOQUEJANT) =================
 static bool readLineSerial1(String &out) {
   static char buf[32];
   static uint8_t idx = 0;
@@ -130,313 +80,257 @@ static bool readLineSerial1(String &out) {
     }
 
     if (idx < sizeof(buf) - 1) buf[idx++] = c;
-    else idx = 0;  // overflow -> reset
+    else idx = 0; // overflow -> reset
   }
   return false;
 }
 
-// ================= MOTORES =================
-void moveKUKI(char direccion, bool parada, int velPWM) {
-  if (parada) velPWM = 0;
-  velPWM = constrain(velPWM, 0, 255);
+// ===== helper: enviar como "<zona><dir><vel>\n" =====
+static void sendCmd(uint8_t z, char d, int v) {
+  if (z > 3) z = 3;         // permet 0..3
+  v = constrain(v, 0, 255);
 
-  switch (direccion) {
-    case 'a':  // Adelante
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'b':  // Diagonal ++
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'c':  // Derecha
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, HIGH);
-      break;
-    case 'd':  // Diagonal +-
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, HIGH);
-      break;
-    case 'e':  // Atras
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, HIGH);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, HIGH);
-      break;
-    case 'f':  // Diagonal --
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, HIGH);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'g':  // Izquierda
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, HIGH);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'h':  // Diagonal -+
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'i':  // Giro izquierdas
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'j':  // Giro derechas
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, HIGH);
-      break;
-    case 'k':  // Full Izquierda
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'l':  // Más Izquierda
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'm':  // Izquierda suave
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'n':  // Poco Izquierda
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'o':  // Adelante (alias)
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'p':  // Poco Derecha
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'q':  // Derecha suave
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'r':  // Más Derecha
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 's':  // Full Derecha
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
-      break;
-    default:
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
-      break;
-  }
-
-  analogWrite(motor1Vel, velPWM);
-  analogWrite(motor2Vel, velPWM);
-  analogWrite(motor3Vel, velPWM);
-  analogWrite(motor4Vel, velPWM);
+  char out[16];
+  snprintf(out, sizeof(out), "%d%c%d\n", (int)z, d, v);
+  Serial1.print(out);
 }
 
-// ================= RFID =================
-void RFID() {
-  if (millis() - ultimoEnvio < intervaloRFID) return;
+// ================= LEDS =================
+static void setLeds(bool green, bool red) {
+  digitalWrite(Luz_VERDE, green ? HIGH : LOW);
+  digitalWrite(Luz_ROJO,  red   ? HIGH : LOW);
+}
 
-  if (!mfrc522.PICC_IsNewCardPresent()) {
-    tarjetaDetectada = false;
-    lastZonaSent = -1;
+static void updateLeds() {
+  // HOLD: leds OFF i ja
+  if (inHold()) {
+    setLeds(false, false);
     return;
   }
 
-  if (!mfrc522.PICC_ReadCardSerial()) return;
-
-  byte sector = 1;
-  byte blocDins = 0;
-  byte posicion = 0;
-
-  switch (zonaActual) {
-    case 0:
-    case 1:
-      blocDins = 1;
-      posicion = 1;
-      break;
-    case 2:
-      blocDins = 2;
-      posicion = 1;
-      break;
-    case 3:
-      blocDins = 2;
-      posicion = 8;
-      break;
-    default:
-      mfrc522.PICC_HaltA();
-      return;
-  }
-
-  byte bloque = sector * 4 + blocDins;
-
-  MFRC522::MIFARE_Key key;
-  for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
-
-  byte buffer[18];
-  byte size = sizeof(buffer);
-
-  if (mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A,
-                               bloque, &key, &(mfrc522.uid))
-      != MFRC522::STATUS_OK) {
-    mfrc522.PICC_HaltA();
-    mfrc522.PCD_StopCrypto1();
+  // ZONA 0: alterna verd/vermell 0.5s/0.5s
+  if (zonaOrdenada == 0) {
+    uint32_t phase = (millis() / PITSTEP_MS) % 2;
+    if (phase == 0) setLeds(true, false);
+    else            setLeds(false, true);
     return;
   }
 
-  if (mfrc522.MIFARE_Read(bloque, buffer, &size) != MFRC522::STATUS_OK) {
-    mfrc522.PICC_HaltA();
-    mfrc522.PCD_StopCrypto1();
+  // ZONA 2: per defecte FIX vermell, si blinkRed => blink vermell
+  if (zonaOrdenada == 2) {
+    if (blinkRed) {
+      bool on = ((millis() / BLINK_MS) % 2) == 0;
+      setLeds(false, on);
+    } else {
+      setLeds(false, true);
+    }
     return;
   }
 
-  if (posicion >= 16) {
-    mfrc522.PICC_HaltA();
-    mfrc522.PCD_StopCrypto1();
+  // ZONA 3: per defecte FIX verd, si blinkGreen => blink verd
+  if (zonaOrdenada == 3) {
+    if (blinkGreen) {
+      bool on = ((millis() / BLINK_MS) % 2) == 0;
+      setLeds(on, false);
+    } else {
+      setLeds(true, false);
+    }
     return;
   }
 
-  byte valor = buffer[posicion];
+  // ZONA 1: leds OFF
+  setLeds(false, false);
+}
 
-  if (!tarjetaDetectada || zonaActual != lastZonaSent || valor != lastValorSent) {
-    Serial1.print("Z");
-    Serial1.print(zonaActual);
-    Serial1.print(":");
-    if (valor < 0x10) Serial1.print("0");
-    Serial1.print(valor, HEX);
-    Serial1.println();
+// ================= BLE =================
+// Actualmente está deshabilitado porque funciona solo en modo manual
+/*void prog(BLEDevice peripheral) {
+  Serial.println("Conectando BLE...");
 
-    Serial.print("Z");
-    Serial.print(zonaActual);
-    Serial.print(":");
-    if (valor < 0x10) Serial.print("0");
-    Serial.print(valor, HEX);
-    Serial.println();
-
-    ultimoEnvio = millis();
-    tarjetaDetectada = true;
-    lastZonaSent = zonaActual;
-    lastValorSent = valor;
+  if (!peripheral.connect()) {
+    Serial.println("Error conexión");
+    return;
   }
 
-  mfrc522.PICC_HaltA();
-  mfrc522.PCD_StopCrypto1();
+  Serial.println("Conectado");
+
+  if (!peripheral.discoverAttributes()) {
+    Serial.println("Error atributos");
+    peripheral.disconnect();
+    return;
+  }
+
+  BLECharacteristic X = peripheral.characteristic("19b10001-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic Y = peripheral.characteristic("19b10002-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic Vel = peripheral.characteristic("19b10004-e8f2-537e-4f6c-d104768a1214");
+
+  if (!X || !Y || !Vel) {
+    Serial.println("Característica faltante");
+    peripheral.disconnect();
+    return;
+  }
+
+  while (peripheral.connected()) {
+    leerMega();
+    updateLeds();
+
+    if (X.canRead() && Y.canRead() && Vel.canRead()) {
+      uint8_t bx[4], by[4], bv[4];
+
+      int nx = X.readValue(bx, 4);
+      int ny = Y.readValue(by, 4);
+      int nv = Vel.readValue(bv, 4);
+
+      if (nx == 4 && ny == 4 && nv == 4) {
+        float valX, valY, valVel;
+        memcpy(&valX, bx, 4);
+        memcpy(&valY, by, 4);
+        memcpy(&valVel, bv, 4);
+
+        float t = 0.2f;
+
+        if (abs(valX) < t && abs(valY) < t) dir = 'n';
+        else if (valX > t && valY > t) dir = 'h';
+        else if (valX > t && valY < -t) dir = 'b';
+        else if (valX < -t && valY > t) dir = 'f';
+        else if (valX < -t && valY < -t) dir = 'd';
+        else if (valX > t) dir = 'a';
+        else if (valX < -t) dir = 'e';
+        else if (valY > t) dir = 'g';
+        else if (valY < -t) dir = 'c';
+      }
+      
+    }
+
+    delay(100);
+  }
+
+  Serial.println("BLE desconectado");
+}*/
+
+// ================= SENSORES =================
+char lecturaSensor() {
+  static char ultimaDirValida = 'z';
+  static uint8_t missCount = 0;
+
+  char direccion = 'z';
+
+  bool sensor1 = digitalRead(PinSensor1);
+  bool sensor2 = digitalRead(PinSensor2);
+  bool sensor3 = digitalRead(PinSensor3);
+  bool sensor4 = digitalRead(PinSensor4);
+  bool sensor5 = digitalRead(PinSensor5);
+
+  if (zonaRecibida == 3 && sensor5) {
+    direccion = 's';
+  } else if (zonaRecibida != 3 && (sensor1 && sensor2)) {
+    direccion = 'l';
+  } else if (zonaRecibida != 3 && (sensor2 && sensor3)) {
+    direccion = 'n';
+  } else if (sensor3 && sensor4) {
+    direccion = 'p';
+  } else if (sensor4 && sensor5) {
+    direccion = 'r';
+  } else if (sensor1) {
+    direccion = 'k';
+  } else if (sensor2) {
+    direccion = 'm';
+  } else if (sensor3) {
+    direccion = 'o';
+  } else if (sensor4) {
+    direccion = 'q';
+  } else if (sensor5) {
+    direccion = 's';
+  }
+
+  if (direccion != 'z') {
+    ultimaDirValida = direccion;
+    missCount = 0;
+    return direccion;
+  }
+
+  missCount++;
+  if (missCount < MAX_MISS) return ultimaDirValida;
+  return 'z';
+}
+
+// ================= LEER MEGA (RFID) =================
+void leerMega() {
+  String line;
+  if (!readLineSerial1(line)) return;
+
+  msgMega = line;
+
+  // Format: Zx:YY
+  if (msgMega.length() >= 5 && msgMega[0] == 'Z' && msgMega[2] == ':') {
+    uint8_t z = (uint8_t)(msgMega[1] - '0');
+    if (z > 3) return;
+
+    String valorHex = msgMega.substring(3);
+    uint8_t nuevoCamino = (uint8_t)strtol(valorHex.c_str(), NULL, 16);
+
+    zonaRecibida = z;
+    camino = nuevoCamino;
+
+    // ========= FSM + blink latch =========
+    switch (zonaOrdenada) {
+
+      // ZONA 0: només surt si veu 02 o 03
+      case 0:
+        if (camino == 0x02) { zonaOrdenada = 2; blinkRed = false; }
+        else if (camino == 0x03) { zonaOrdenada = 3; blinkGreen = false; }
+        break;
+
+      // ZONA 1: 02->2, 03->3, 00->0
+      case 1:
+        if (camino == 0x02) { zonaOrdenada = 2; blinkRed = false; }
+        else if (camino == 0x03) { zonaOrdenada = 3; blinkGreen = false; }
+        else if (camino == 0x00) { zonaOrdenada = 0; }
+        break;
+
+      // ZONA 2:
+      // - si veu 01 => Z1 + HOLD + leds off (blink off)
+      // - si veu altre => queda a Z2 i activa blink vermell
+      case 2:
+        if (camino == 0x01) {
+          blinkRed = false;
+          zonaOrdenada = 1;
+          startHold(HOLD_MS);
+        } else {
+          blinkRed = true;   // tag raro
+          startHold(1000000);
+        }
+        break;
+
+      // ZONA 3:
+      // - si veu 01 => Z1 + HOLD + leds off (blink off)
+      // - si veu altre => queda a Z3 i activa blink verd
+      case 3:
+        if (camino == 0x01) {
+          blinkGreen = false;
+          zonaOrdenada = 1;
+          startHold(HOLD_MS);
+        } else {
+          blinkGreen = true; // tag raro
+          startHold(1000000);
+        }
+        break;
+    }
+
+    Serial.print("RX -> ");
+    Serial.print(msgMega);
+    Serial.print(" | camino=0x");
+    if (camino < 0x10) Serial.print("0");
+    Serial.print(camino, HEX);
+    Serial.print(" | zonaOrdenada=");
+    Serial.print(zonaOrdenada);
+    Serial.print(" | blinkR=");
+    Serial.print(blinkRed ? "1" : "0");
+    Serial.print(" | blinkG=");
+    Serial.print(blinkGreen ? "1" : "0");
+    Serial.print(" | hold=");
+    Serial.println(inHold() ? "YES" : "NO");
+  }
 }
 
 // ================= SETUP =================
@@ -444,60 +338,96 @@ void setup() {
   Serial.begin(9600);
   Serial1.begin(9600);
 
-  // Motores
-  pinMode(motor1A, OUTPUT);
-  pinMode(motor1B, OUTPUT);
-  pinMode(motor1Vel, OUTPUT);
-  pinMode(motor2A, OUTPUT);
-  pinMode(motor2B, OUTPUT);
-  pinMode(motor2Vel, OUTPUT);
-  pinMode(motor3A, OUTPUT);
-  pinMode(motor3B, OUTPUT);
-  pinMode(motor3Vel, OUTPUT);
-  pinMode(motor4A, OUTPUT);
-  pinMode(motor4B, OUTPUT);
-  pinMode(motor4Vel, OUTPUT);
+  BLE.begin();
+  Serial.println("RP2040 READY");
+  BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
 
-  // Ultrasonidos + LEDs
-  for (int i = 0; i < 3; i++) {
-    pinMode(trigPins[i], OUTPUT);
-    pinMode(echoPins[i], INPUT);
-    pinMode(ledPins[i], OUTPUT);
-  }
+  pinMode(selectorModoBLT, INPUT);
+  pinMode(botonStart, INPUT);
+  pinMode(botonStop, INPUT);
 
-  // RFID
-  SPI.begin();
-  mfrc522.PCD_Init();
+  pinMode(Luz_VERDE, OUTPUT);
+  pinMode(Luz_blutuch, OUTPUT);
+  pinMode(Luz_ROJO, OUTPUT);
 
+  pinMode(PinSensor1, INPUT);
+  pinMode(PinSensor2, INPUT);
+  pinMode(PinSensor3, INPUT);
+  pinMode(PinSensor4, INPUT);
+  pinMode(PinSensor5, INPUT);
 
+  setLeds(false, false);
 }
 
 // ================= LOOP =================
 void loop() {
-  // 1) Leer y actualizar los 3 ultrasonidos (actualiza paradaEmergencia)
-  actualizarUltrasonidos();
+  COMSBLT = digitalRead(selectorModoBLT);
+  digitalWrite(Luz_blutuch, COMSBLT ? HIGH : LOW);
 
-  // 2) Leer instrucciones de la RP2040 (no-bloqueante)
-  String line;
-  if (readLineSerial1(line)) {
-    msg = line;
+  BLEDevice peripheral = BLE.available();
 
-    if (msg.length() >= 3) {
-      char zc = msg[0];
-      char dc = msg[1];
-      int v = msg.substring(2).toInt();
+  // ----- MODO BLE -----
+  /*
+  DESHABILITADO
+  if (peripheral && COMSBLT) {
+    if (peripheral.localName().indexOf("Mando Kuki") < 0) return;
 
-      zonaActual = (zc >= '0' && zc <= '3') ? (zc - '0') : 1;
-      vel = constrain(v, 0, 255);
+    BLE.stopScan();
+    prog(peripheral);
+    BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
+    return;
+  }*/
 
-      if (zonaActual == 0 || vel == 0) dc = 'z';
+  // ----- MODO SENSORES -----
+  if (!COMSBLT) {
+    if (millis() - tiempoActualLectura >= (unsigned long)tiempoPeriodoLectura) {
+      tiempoActualLectura = millis();
 
-      moveKUKI(dc, paradaEmergencia, vel);
-      Serial.println(dc);
+      // 1) RFID
+      leerMega();
+
+      // 2) LEDs segons estat
+      updateLeds();
+
+      // 3) Direcció
+      dir = lecturaSensor();
+
+      // 4) Vel
+      //k l m n o p q r s
+      int vOut;
+      char dirOut = dir;
+
+      if(dir=='o'){
+        vOut = velRecto;
+      }
+      else if((dir == 'n') || (dir == 'p')){
+        vOut = velGiro1;
+      }
+      else if((dir == 'm') || (dir == 'q')){
+        vOut = velGiro1;
+      }
+      else if((dir == 'l') || (dir == 'r')){
+        vOut = velGiro2;
+      }
+      else if((dir == 'k') || (dir == 's')){
+        vOut = velGiro3;
+      }
+
+     
       
+
+      // HOLD o ZONA 0 => STOP
+      if (inHold() || zonaOrdenada == 0) {
+        dirOut = 'z';
+        vOut = 0;
+      }
+      sendCmd(zonaOrdenada, dirOut, vOut);
+      Serial.print("Dir: ");
+      Serial.print(dirOut);
+      Serial.print("    Vel: ");
+      Serial.print(vOut);
+      Serial.print("    Zona: ");
+      Serial.println(zonaOrdenada);
     }
   }
-
-  // 3) RFID
-  RFID();
 }
