@@ -1,10 +1,7 @@
-#include <ArduinoBLE.h>
-
 // ================= VARIABLES =================
 String msg;   // compat/debug
 char dir;
 
-// Cuantas lecturas seguidas sin linea toleramos
 const uint8_t MAX_MISS = 10;
 
 // Velocitats (0..255)
@@ -27,9 +24,6 @@ unsigned long tiempoActualLectura = 0;
 #define Luz_ROJO 6
 #define Luz_blutuch 7
 
-bool setRojo = false;   // (no usat, el deixo per compat)
-bool setVerde = false;  // (no usat, el deixo per compat)
-
 bool COMSBLT = false;
 
 // Pines sensores
@@ -44,7 +38,7 @@ String msgMega = "";
 uint8_t zonaRecibida = 0;  // feedback del MEGA (Zx:YY)
 
 // Nou estat RFID simplificat
-uint8_t camino = 0;        // 0=unset, després 1/2/3 (no canvia fàcil)
+uint8_t camino = 0;        // 0=unset, després 1/2/3
 uint8_t tagLeido = 0;      // 0=first, 1/2/3=station tag, 4=unknown/mismatch
 
 // ================= UART1 LINE READER (NO BLOQUEJANT) =================
@@ -65,14 +59,14 @@ static bool readLineSerial1(String &out) {
     }
 
     if (idx < sizeof(buf) - 1) buf[idx++] = c;
-    else idx = 0; // overflow -> reset
+    else idx = 0;
   }
   return false;
 }
 
-// ===== helper: enviar como "<zona><dir><vel>\n" =====
+// ===== helper: enviar como "<zonaTarget><dir><vel>\n" =====
 static void sendCmd(uint8_t z, char d, int v) {
-  if (z > 3) z = 3;         // permet 0..3
+  if (z > 3) z = 3;
   v = constrain(v, 0, 255);
 
   char out[16];
@@ -87,48 +81,32 @@ static void setLeds(bool green, bool red) {
 }
 
 static void updateLeds() {
-  // Camino 1: leds apagats, excepte si tagLeido=4 (alternen)
   if (camino == 1) {
     if (tagLeido == 4) {
       const bool tick = ((millis() / 250) % 2) == 0;
-      setLeds(!tick, tick); // alterna verd/vermell
-    } else {
-      setLeds(false, false);
-    }
+      setLeds(!tick, tick);
+    } else setLeds(false, false);
     return;
   }
 
-  // Camino 2: normal = vermell fix; tagLeido=4 = pampalluga vermell
   if (camino == 2) {
     if (tagLeido == 4) {
       const bool tick = ((millis() / 250) % 2) == 0;
       setLeds(false, tick);
-    } else {
-      setLeds(false, true);
-    }
+    } else setLeds(false, true);
     return;
   }
 
-  // Camino 3: normal = verd fix; tagLeido=4 = pampalluga verd
   if (camino == 3) {
     if (tagLeido == 4) {
       const bool tick = ((millis() / 250) % 2) == 0;
       setLeds(tick, false);
-    } else {
-      setLeds(true, false);
-    }
+    } else setLeds(true, false);
     return;
   }
 
-  // Camino 0 (no establert): leds apagats
   setLeds(false, false);
 }
-
-// ================= BLE =================
-// Actualmente está deshabilitado porque funciona solo en modo manual
-/*void prog(BLEDevice peripheral) {
-  ...
-}*/
 
 // ================= SENSORES =================
 char lecturaSensor() {
@@ -180,44 +158,28 @@ char lecturaSensor() {
 static inline bool isStationTag(uint8_t t) { return t == 1 || t == 2 || t == 3; }
 
 static void applyTag(uint8_t tag) {
-  // Si no és 1/2/3 => desconegut
-  if (!isStationTag(tag)) {
-    tagLeido = 4;
-    return;
-  }
+  if (!isStationTag(tag)) { tagLeido = 4; return; }
 
-  // Primera iteració / camí no establert:
-  // només arrenca amb tag 2 o 3
   if (camino == 0 || tagLeido == 0) {
     if (tag == 2) { camino = 2; tagLeido = 2; }
     else if (tag == 3) { camino = 3; tagLeido = 3; }
-    else {
-      // tag 1: no arrenca, i no toquem tagLeido (segueix 0)
-    }
     return;
   }
 
-  // En funció del camí actual
   switch (camino) {
     case 2:
-      // En camí 2 només reacciones a tag 1
       if (tag == 1) { camino = 1; tagLeido = 1; }
-      else { tagLeido = 4; }   // inclòs tag 2 i tag 3 => mismatch
+      else tagLeido = 4;
       break;
-
     case 3:
-      // En camí 3 només reacciones a tag 1
       if (tag == 1) { camino = 1; tagLeido = 1; }
-      else { tagLeido = 4; }
+      else tagLeido = 4;
       break;
-
     case 1:
-      // En camí 1 reacciones a 2 o 3
       if (tag == 2) { camino = 2; tagLeido = 2; }
       else if (tag == 3) { camino = 3; tagLeido = 3; }
-      else { tagLeido = 4; }
+      else tagLeido = 4;
       break;
-
     default:
       tagLeido = 4;
       break;
@@ -243,7 +205,7 @@ void leerMega() {
 
   Serial.print("RX -> ");
   Serial.print(msgMega);
-  Serial.print(" | zona=");
+  Serial.print(" | zonaRecibida=");
   Serial.print(zonaRecibida);
   Serial.print(" | tag=");
   Serial.print(tag);
@@ -258,9 +220,7 @@ void setup() {
   Serial.begin(9600);
   Serial1.begin(9600);
 
-  BLE.begin();
-  Serial.println("RP2040 READY");
-  BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
+  Serial.println("RP2040 READY (BLE disabled)");
 
   pinMode(selectorModoBLT, INPUT);
   pinMode(botonStart, INPUT);
@@ -284,26 +244,11 @@ void loop() {
   COMSBLT = digitalRead(selectorModoBLT);
   digitalWrite(Luz_blutuch, COMSBLT ? HIGH : LOW);
 
-  BLEDevice peripheral = BLE.available();
-
-  // ----- MODO BLE -----
-  /*
-  DESHABILITADO
-  if (peripheral && COMSBLT) {
-    if (peripheral.localName().indexOf("Mando Kuki") < 0) return;
-
-    BLE.stopScan();
-    prog(peripheral);
-    BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
-    return;
-  }*/
-
-  // ----- MODO SENSORES -----
   if (!COMSBLT) {
     if (millis() - tiempoActualLectura >= (unsigned long)tiempoPeriodoLectura) {
       tiempoActualLectura = millis();
 
-      // 1) RFID
+      // 1) RFID (rep de MEGA)
       leerMega();
 
       // 2) LEDs segons estat
@@ -313,36 +258,29 @@ void loop() {
       dir = lecturaSensor();
 
       // 4) Vel
-      // k l m n o p q r s
       int vOut = 0;
       char dirOut = dir;
 
-      if (dir == 'o') {
-        vOut = velRecto;
-      } else if ((dir == 'n') || (dir == 'p')) {
-        vOut = velGiro1;
-      } else if ((dir == 'm') || (dir == 'q')) {
-        vOut = velGiro1;
-      } else if ((dir == 'l') || (dir == 'r')) {
-        vOut = velGiro2;
-      } else if ((dir == 'k') || (dir == 's')) {
-        vOut = velGiro3;
-      } else {
-        // 'z' o altres: stop
-        vOut = 0;
-      }
+      if (dir == 'o') vOut = velRecto;
+      else if ((dir == 'n') || (dir == 'p')) vOut = velGiro1;
+      else if ((dir == 'm') || (dir == 'q')) vOut = velGiro1;
+      else if ((dir == 'l') || (dir == 'r')) vOut = velGiro2;
+      else if ((dir == 'k') || (dir == 's')) vOut = velGiro3;
+      else vOut = 0;
 
-      // (Ja no hi ha HOLD ni zonaOrdenada)
-      sendCmd(zonaRecibida, dirOut, vOut);
+      // ✅ CLAU: enviem camino com a zonaTarget (mana la RFID de la MEGA)
+      sendCmd(camino, dirOut, vOut);
 
-      Serial.print("Dir: ");
+      Serial.print("TX <- ");
+      Serial.print(camino);
       Serial.print(dirOut);
-      Serial.print("    Vel: ");
       Serial.print(vOut);
-      Serial.print("    ZonaRx: ");
+      Serial.print(" | zonaRecibida=");
       Serial.print(zonaRecibida);
-      Serial.print("    Camino: ");
-      Serial.println(camino);
+      Serial.print(" | camino=");
+      Serial.print(camino);
+      Serial.print(" | tagLeido=");
+      Serial.println(tagLeido);
     }
   }
 }
