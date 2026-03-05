@@ -1,4 +1,4 @@
-/* Esclavo (MEGA2560) — con 3 ultrasonidos + LEDs + parada de emergencia */
+/* Esclavo (MEGA2560) — con RFID + ultrasonido + motores */
 #include <SPI.h>
 #include <MFRC522.h>
 
@@ -26,15 +26,13 @@ int vel = 0;
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 
 // ================= VARIABLES SENSORES ULTRASONICOS =================
-// NOTA: pines sensor ultrasonico = 26/27
 const int trigPin = 26;
-const int echoPin = 27; 
+const int echoPin = 27;
 bool paradaEmergencia = false;
-// Umbral de parada (cm) — LED fijo = muy cerca = peligro
 #define DISTANCIA_PARADA 25
 
 // ================= ZONA / RFID CONTROL =================
-int zonaActual = 0;
+int zonaActual = 0; // IMPORTANT: zona que determina qué bloque/posición leer
 
 unsigned long ultimoEnvio = 0;
 const unsigned long intervaloRFID = 200;
@@ -50,10 +48,10 @@ int medirDistancia() {
   digitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
+
   long tiempo = pulseIn(echoPin, HIGH, 30000);
   if (tiempo == 0) return 999;  // sin eco = libre
 
-  //Si la distancia medida es menor o igual a la distancia de parada, devuelve true
   return (int)(tiempo * 0.034 / 2);
 }
 
@@ -82,220 +80,109 @@ static bool readLineSerial1(String &out) {
 
 // ================= MOTORES =================
 void moveKUKI(char direccion, bool parada, int velPWM) {
-  if (parada) 
-  {
+  if (parada) {
     velPWM = 0;
-    digitalWrite(motor1A, LOW);
-    digitalWrite(motor1B, LOW);
-    digitalWrite(motor2A, LOW);
-    digitalWrite(motor2B, LOW);
-    digitalWrite(motor3A, LOW);
-    digitalWrite(motor3B, LOW);
-    digitalWrite(motor4A, LOW);
-    digitalWrite(motor4B, LOW);
+    digitalWrite(motor1A, LOW); digitalWrite(motor1B, LOW);
+    digitalWrite(motor2A, LOW); digitalWrite(motor2B, LOW);
+    digitalWrite(motor3A, LOW); digitalWrite(motor3B, LOW);
+    digitalWrite(motor4A, LOW); digitalWrite(motor4B, LOW);
   }
+
   velPWM = constrain(velPWM, 0, 255);
 
   switch (direccion) {
     case 'a':  // Adelante
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'b':  // Diagonal ++
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'c':  // Derecha
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, HIGH);
-      break;
-    case 'd':  // Diagonal +-
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, HIGH);
-      break;
-    case 'e':  // Atras
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, HIGH);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, HIGH);
-      break;
-    case 'f':  // Diagonal --
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, HIGH);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'g':  // Izquierda
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, HIGH);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'h':  // Diagonal -+
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'i':  // Giro izquierdas
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'j':  // Giro derechas
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, HIGH);
-      break;
-    case 'k':  // Full Izquierda
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'l':  // Más Izquierda
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'm':  // Izquierda suave
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
-      break;
-    case 'n':  // Poco Izquierda
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
-      break;
     case 'o':  // Adelante (alias)
-      digitalWrite(motor1A, HIGH);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
+      digitalWrite(motor1A, HIGH); digitalWrite(motor1B, LOW);
+      digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
+      digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
+      digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
       break;
-    case 'p':  // Poco Derecha
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
+
+    case 'b':  // Diagonal ++
+      digitalWrite(motor1A, LOW);  digitalWrite(motor1B, LOW);
+      digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
+      digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
+      digitalWrite(motor4A, LOW);  digitalWrite(motor4B, LOW);
       break;
-    case 'q':  // Derecha suave
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
+
+    case 'c':  // Derecha
+      digitalWrite(motor1A, LOW);  digitalWrite(motor1B, HIGH);
+      digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
+      digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
+      digitalWrite(motor4A, LOW);  digitalWrite(motor4B, HIGH);
       break;
-    case 'r':  // Más Derecha
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
+
+    case 'd':  // Diagonal +-
+      digitalWrite(motor1A, LOW);  digitalWrite(motor1B, HIGH);
+      digitalWrite(motor2A, LOW);  digitalWrite(motor2B, LOW);
+      digitalWrite(motor3A, LOW);  digitalWrite(motor3B, LOW);
+      digitalWrite(motor4A, LOW);  digitalWrite(motor4B, HIGH);
       break;
-    case 's':  // Full Derecha
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH);
-      digitalWrite(motor4B, LOW);
+
+    case 'e':  // Atras
+      digitalWrite(motor1A, LOW); digitalWrite(motor1B, HIGH);
+      digitalWrite(motor2A, LOW); digitalWrite(motor2B, HIGH);
+      digitalWrite(motor3A, LOW); digitalWrite(motor3B, HIGH);
+      digitalWrite(motor4A, LOW); digitalWrite(motor4B, HIGH);
       break;
-    default:
-      digitalWrite(motor1A, LOW);
-      digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);
-      digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);
-      digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);
-      digitalWrite(motor4B, LOW);
+
+    case 'f':  // Diagonal --
+      digitalWrite(motor1A, LOW); digitalWrite(motor1B, LOW);
+      digitalWrite(motor2A, LOW); digitalWrite(motor2B, HIGH);
+      digitalWrite(motor3A, LOW); digitalWrite(motor3B, HIGH);
+      digitalWrite(motor4A, LOW); digitalWrite(motor4B, LOW);
+      break;
+
+    case 'g':  // Izquierda
+      digitalWrite(motor1A, HIGH); digitalWrite(motor1B, LOW);
+      digitalWrite(motor2A, LOW);  digitalWrite(motor2B, HIGH);
+      digitalWrite(motor3A, LOW);  digitalWrite(motor3B, HIGH);
+      digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
+      break;
+
+    case 'h':  // Diagonal -+
+      digitalWrite(motor1A, HIGH); digitalWrite(motor1B, LOW);
+      digitalWrite(motor2A, LOW);  digitalWrite(motor2B, LOW);
+      digitalWrite(motor3A, LOW);  digitalWrite(motor3B, LOW);
+      digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
+      break;
+
+    case 'i':  // Giro izquierdas
+      digitalWrite(motor1A, LOW);  digitalWrite(motor1B, HIGH);
+      digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
+      digitalWrite(motor3A, LOW);  digitalWrite(motor3B, HIGH);
+      digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
+      break;
+
+    case 'j':  // Giro derechas
+      digitalWrite(motor1A, LOW);  digitalWrite(motor1B, HIGH);
+      digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
+      digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
+      digitalWrite(motor4A, LOW);  digitalWrite(motor4B, HIGH);
+      break;
+
+    // k..s (tu tens molts casos que en realitat fan el mateix)
+    case 'k': case 'l': case 'm': case 'n': // variants esquerra
+      digitalWrite(motor1A, HIGH); digitalWrite(motor1B, LOW);
+      digitalWrite(motor2A, LOW);  digitalWrite(motor2B, LOW);
+      digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
+      digitalWrite(motor4A, LOW);  digitalWrite(motor4B, LOW);
+      break;
+
+    case 'p': case 'q': case 'r': case 's': // variants dreta
+      digitalWrite(motor1A, LOW);  digitalWrite(motor1B, LOW);
+      digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
+      digitalWrite(motor3A, LOW);  digitalWrite(motor3B, LOW);
+      digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
+      break;
+
+    default: // 'z' o qualsevol altra
+      digitalWrite(motor1A, LOW); digitalWrite(motor1B, LOW);
+      digitalWrite(motor2A, LOW); digitalWrite(motor2B, LOW);
+      digitalWrite(motor3A, LOW); digitalWrite(motor3B, LOW);
+      digitalWrite(motor4A, LOW); digitalWrite(motor4B, LOW);
+      velPWM = 0;
       break;
   }
 
@@ -349,8 +236,7 @@ void RFID() {
   byte size = sizeof(buffer);
 
   if (mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A,
-                               bloque, &key, &(mfrc522.uid))
-      != MFRC522::STATUS_OK) {
+                               bloque, &key, &(mfrc522.uid)) != MFRC522::STATUS_OK) {
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
     return;
@@ -370,6 +256,7 @@ void RFID() {
 
   byte valor = buffer[posicion];
 
+  // Enviar només si canvia zona/valor (o primera detecció)
   if (!tarjetaDetectada || zonaActual != lastZonaSent || valor != lastValorSent) {
     Serial1.print("Z");
     Serial1.print(zonaActual);
@@ -414,55 +301,56 @@ void setup() {
   pinMode(motor4B, OUTPUT);
   pinMode(motor4Vel, OUTPUT);
 
-  // Ultrasonidos 
-  for (int i = 0; i < 3; i++) {
-    pinMode(trigPin, OUTPUT);
-    pinMode(echoPin, INPUT);
-  }
+  // Ultrasonido
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
 
   // RFID
   SPI.begin();
   mfrc522.PCD_Init();
-
-
 }
 
 // ================= LOOP =================
 void loop() {
-  // 1) Lee el sensor ultrasonico y actualiza paradaEmergencia
-  
-  if(medirDistancia() <= DISTANCIA_PARADA){
-    paradaEmergencia = true;
-  }
-  else{
-    paradaEmergencia = false;
-  }
+  // 1) Ultrasonido
+  paradaEmergencia = (medirDistancia() <= DISTANCIA_PARADA);
 
   // 2) Leer instrucciones de la RP2040 (no-bloqueante)
   String line;
   if (readLineSerial1(line)) {
     msg = line;
 
+    // Esperem: "<zona><dir><vel>"
+    // Ex: "2o80" o "3z0"
     if (msg.length() >= 3) {
-      char zc = msg[0];
-      char dc = msg[1];
-      int v = msg.substring(2).toInt();
+      const char zc = msg[0];
+      const char dcIn = msg[1];
+      const int vIn = msg.substring(2).toInt();
 
-      zonaActual = (zc >= '0' && zc <= '3') ? (zc - '0') : 1;
-      vel = constrain(v, 0, 255);
+      int zParsed = -1;
+      if (zc >= '0' && zc <= '3') zParsed = (zc - '0');
 
+      // Si zona vàlida: actualitza zonaActual (important per RFID)
+      if (zParsed >= 0) zonaActual = zParsed;
+
+      vel = constrain(vIn, 0, 255);
+
+      // Regles de seguretat: si zona 0 o vel 0 => stop
+      char dc = dcIn;
       if (zonaActual == 0 || vel == 0) dc = 'z';
 
       moveKUKI(dc, paradaEmergencia, vel);
-      Serial.print("Dir: ");
+
+      Serial.print("RX <- ");
+      Serial.print(msg);
+      Serial.print(" | Dir: ");
       Serial.print(dc);
       Serial.print(" | Vel: ");
       Serial.print(vel);
       Serial.print(" | Parada: ");
-      Serial.print(paradaEmergencia);
-      Serial.print(" | Zona: ");
-      Serial.println(zc);
-      
+      Serial.print(paradaEmergencia ? "YES" : "NO");
+      Serial.print(" | ZonaActual: ");
+      Serial.println(zonaActual);
     }
   }
 
