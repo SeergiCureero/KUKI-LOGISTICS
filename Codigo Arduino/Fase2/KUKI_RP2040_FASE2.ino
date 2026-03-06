@@ -294,10 +294,8 @@ void loop() {
       dirOut = dir;
 
       if (tagLeido == 4) {
-        dir = 'z';
         vOut = 0;
       } else if (apagarMotores == true) {
-        dir = 'z';
         vOut = 0;
         delay(2000);
         apagarMotores = false;
