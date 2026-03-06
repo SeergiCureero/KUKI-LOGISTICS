@@ -84,7 +84,6 @@ static bool readLineSerial1(String &out) {
 void moveKUKI(char direccion, bool parada, int velPWM) {
   if (parada) {
     velPWM = 0;
-    digitalWrite(buzzer, HIGH);
     digitalWrite(motor1A, LOW); digitalWrite(motor1B, LOW);
     digitalWrite(motor2A, LOW); digitalWrite(motor2B, LOW);
     digitalWrite(motor3A, LOW); digitalWrite(motor3B, LOW);
@@ -310,11 +309,17 @@ void setup() {
 
 // ================= LOOP =================
 void loop() {
+
+  // 1️⃣ Calcular parada
   paradaEmergencia = (medirDistancia() <= DISTANCIA_PARADA);
 
-  // 1) RX des de RP2040: "<zonaTarget><dir><vel>\n"
+  // 2️⃣ Buzzer independiente
+  digitalWrite(buzzer, paradaEmergencia ? HIGH : LOW);
+
+  // 3️⃣ RX desde RP2040
   String line;
   if (readLineSerial1(line)) {
+
     msg = line;
 
     if (msg.length() >= 3) {
@@ -322,13 +327,14 @@ void loop() {
       const char dcIn = msg[1];
       const int vIn = msg.substring(2).toInt();
 
-      // zonaTarget mana la RFID
-      if (zc >= '0' && zc <= '3') zonaActual = (zc - '0');
+      if (zc >= '0' && zc <= '3')
+        zonaActual = (zc - '0');
 
       vel = constrain(vIn, 0, 255);
 
       char dc = dcIn;
-      if (zonaActual == 0 || vel == 0) dc = 'z';
+      if (zonaActual == 0 || vel == 0)
+        dc = 'z';
 
       moveKUKI(dc, paradaEmergencia, vel);
 
@@ -345,6 +351,6 @@ void loop() {
     }
   }
 
-  // 2) RFID (usa zonaActual que ve de la RP2040)
+  // 4️⃣ RFID
   RFID();
 }
