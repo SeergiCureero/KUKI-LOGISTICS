@@ -24,6 +24,7 @@ int vel = 0;
 #define RST_PIN 48
 #define SS_PIN 53
 MFRC522 mfrc522(SS_PIN, RST_PIN);
+#define buzzer 45
 
 // ================= VARIABLES SENSORES ULTRASONICOS =================
 const int trigPin = 26;
@@ -83,6 +84,7 @@ static bool readLineSerial1(String &out) {
 void moveKUKI(char direccion, bool parada, int velPWM) {
   if (parada) {
     velPWM = 0;
+    digitalWrite(buzzer, HIGH);
     digitalWrite(motor1A, LOW); digitalWrite(motor1B, LOW);
     digitalWrite(motor2A, LOW); digitalWrite(motor2B, LOW);
     digitalWrite(motor3A, LOW); digitalWrite(motor3B, LOW);
@@ -301,7 +303,7 @@ void setup() {
 
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
-
+  pinMode(buzzer, OUTPUT);
   SPI.begin();
   mfrc522.PCD_Init();
 }
