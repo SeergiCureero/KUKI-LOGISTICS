@@ -4,11 +4,15 @@ char dir;
 
 const uint8_t MAX_MISS = 10;
 
+// Añadir variable global
+unsigned long tiempoParada = 0;
+bool enParada = false;
+
 // Velocitats (0..255)
-int velRecto = 64;
-int velGiro1 = 32;
-int velGiro2 = 48;
-int velGiro3 = 64;
+int velRecto = 25;
+int velGiro1 = 16;
+int velGiro2 = 16;
+int velGiro3 = 25;
 
 int vOut = 0;
 char dirOut;
@@ -137,16 +141,15 @@ char lecturaSensor() {
   bool sensor4 = digitalRead(PinSensor4);
   bool sensor5 = digitalRead(PinSensor5);
 
-  if (camino == 3 && sensor5) {
+  if (camino == 3 && ((sensor5) || (sensor4 && sensor5) || (sensor3 && sensor5) || (sensor3 && sensor4 && sensor5))) {
     direccion = 's';
-  } 
-  else if (camino != 3 && (sensor1 && sensor2)) {
+  } else if (camino == 2 && (sensor1 && sensor2)) {
     direccion = 'l';
-  } else if (camino != 3 && (sensor2 && sensor3)) {
+  } else if (camino == 2 && (sensor2 && sensor3)) {
     direccion = 'n';
   } else if (sensor3 && sensor4) {
     direccion = 'p';
-  } else if (sensor4 && sensor5) {
+  } else if (camino == 3 && (sensor4 && sensor5)) {
     direccion = 'r';
   } else if (sensor1) {
     direccion = 'k';
@@ -156,9 +159,10 @@ char lecturaSensor() {
     direccion = 'o';
   } else if (sensor4) {
     direccion = 'q';
-  } else if (sensor5) {
-    direccion = 's';
   }
+
+  Serial.print("                                 Direccion (sensor): ");
+  Serial.println(direccion);
 
   if (direccion != 'z') {
     ultimaDirValida = direccion;
@@ -168,7 +172,11 @@ char lecturaSensor() {
 
   missCount++;
   if (missCount < MAX_MISS) return ultimaDirValida;
-  return 'z';
+  else{
+    const bool tick = ((millis() / 250) % 2) == 0;
+    setLeds(!tick, tick);
+    return 'z';
+  }
 }
 
 // ================= LEER MEGA (RFID) =================
@@ -300,13 +308,22 @@ void loop() {
       vOut = 0;
       dirOut = dir;
 
-      if (tagLeido == 4) {
-        vOut = 0;
-      } else if (apagarMotores == true) {
-        vOut = 0;
-        delay(2000);
+      // Gestión parada no bloqueante
+      if (apagarMotores) {
         apagarMotores = false;
+        enParada = true;
+        tiempoParada = millis();
+      }
 
+      if (enParada) {
+        vOut = 0;
+        dirOut = 'z';
+        if (millis() - tiempoParada >= 2000) {
+          enParada = false;
+        }
+      } else if (tagLeido == 4) {
+        vOut = 0;
+        dirOut = 'z';
       } else {
         if (dir == 'o') vOut = velRecto;
         else if ((dir == 'n') || (dir == 'p')) vOut = velGiro1;
@@ -316,8 +333,6 @@ void loop() {
         else vOut = 0;
       }
 
-
-      // ✅ CLAU: enviem camino com a zonaTarget (mana la RFID de la MEGA)
       sendCmd(camino, dirOut, vOut);
 
       Serial.print("TX <- ");
