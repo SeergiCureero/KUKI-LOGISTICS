@@ -1,14 +1,18 @@
 // ================= VARIABLES =================
-String msg;   // compat/debug
+String msg;  // compat/debug
 char dir;
 
 const uint8_t MAX_MISS = 10;
 
 // Velocitats (0..255)
-int velRecto  = 80;
-int velGiro1  = 32;
-int velGiro2  = 48;
-int velGiro3  = 64;
+int velRecto = 64;
+int velGiro1 = 32;
+int velGiro2 = 48;
+int velGiro3 = 64;
+
+int vOut = 0;
+char dirOut;
+bool apagarMotores = false;
 
 // Tiempos
 int tiempoPeriodoLectura = 100;
@@ -23,6 +27,7 @@ unsigned long tiempoActualLectura = 0;
 #define Luz_VERDE 5
 #define Luz_ROJO 6
 #define Luz_blutuch 7
+bool apagaLEDs = false;
 
 bool COMSBLT = false;
 
@@ -38,8 +43,8 @@ String msgMega = "";
 uint8_t zonaRecibida = 0;  // feedback del MEGA (Zx:YY)
 
 // Nou estat RFID simplificat
-uint8_t camino = 0;        // 0=unset, després 1/2/3
-uint8_t tagLeido = 0;      // 0=first, 1/2/3=station tag, 4=unknown/mismatch
+uint8_t camino = 0;    // 0=unset, després 1/2/3
+uint8_t tagLeido = 0;  // 0=first, 1/2/3=station tag, 4=unknown/mismatch
 
 // ================= UART1 LINE READER (NO BLOQUEJANT) =================
 static bool readLineSerial1(String &out) {
@@ -77,35 +82,40 @@ static void sendCmd(uint8_t z, char d, int v) {
 // ================= LEDS =================
 static void setLeds(bool green, bool red) {
   digitalWrite(Luz_VERDE, green ? HIGH : LOW);
-  digitalWrite(Luz_ROJO,  red   ? HIGH : LOW);
+  digitalWrite(Luz_ROJO, red ? HIGH : LOW);
 }
 
 static void updateLeds() {
-  if (camino == 1) {
-    if (tagLeido == 4) {
-      const bool tick = ((millis() / 250) % 2) == 0;
-      setLeds(!tick, tick);
-    } else setLeds(false, false);
-    return;
-  }
+  if (!apagaLEDs) {
+    if (camino == 1) {
+      if (tagLeido == 4) {
+        const bool tick = ((millis() / 250) % 2) == 0;
+        setLeds(!tick, tick);
+      } else setLeds(false, false);
+      return;
+    }
 
-  if (camino == 2) {
-    if (tagLeido == 4) {
-      const bool tick = ((millis() / 250) % 2) == 0;
-      setLeds(false, tick);
-    } else setLeds(false, true);
-    return;
-  }
+    if (camino == 2) {
+      if (tagLeido == 4) {
+        const bool tick = ((millis() / 250) % 2) == 0;
+        setLeds(false, tick);
+      } else setLeds(false, true);
+      return;
+    }
 
-  if (camino == 3) {
-    if (tagLeido == 4) {
-      const bool tick = ((millis() / 250) % 2) == 0;
-      setLeds(tick, false);
-    } else setLeds(true, false);
-    return;
-  }
+    if (camino == 3) {
+      if (tagLeido == 4) {
+        const bool tick = ((millis() / 250) % 2) == 0;
+        setLeds(tick, false);
+      } else setLeds(true, false);
+      return;
+    }
 
-  setLeds(false, false);
+    setLeds(false, false);
+  } else {
+    setLeds(false, false);
+    apagaLEDs = false;
+  }
 }
 
 // ================= SENSORES =================
@@ -121,11 +131,11 @@ char lecturaSensor() {
   bool sensor4 = digitalRead(PinSensor4);
   bool sensor5 = digitalRead(PinSensor5);
 
-  if (zonaRecibida == 3 && sensor5) {
+  if (camino == 3 && sensor5) {
     direccion = 's';
-  } else if (zonaRecibida != 3 && (sensor1 && sensor2)) {
+  } else if (camino != 3 && (sensor1 && sensor2)) {
     direccion = 'l';
-  } else if (zonaRecibida != 3 && (sensor2 && sensor3)) {
+  } else if (camino != 3 && (sensor2 && sensor3)) {
     direccion = 'n';
   } else if (sensor3 && sensor4) {
     direccion = 'p';
@@ -155,30 +165,52 @@ char lecturaSensor() {
 }
 
 // ================= LEER MEGA (RFID) =================
-static inline bool isStationTag(uint8_t t) { return t == 255 || t == 2 || t == 3; }
+static inline bool isStationTag(uint8_t t) {
+  return t == 255 || t == 2 || t == 3;
+}
 
 static void applyTag(uint8_t tag) {
-  if (!isStationTag(tag)) { tagLeido = 4; return; }
+  if (!isStationTag(tag)) {
+    tagLeido = 4;
+    return;
+  }
 
   if (camino == 0 || tagLeido == 0) {
-    if (tag == 2) { camino = 2; tagLeido = 2; }
-    else if (tag == 3) { camino = 3; tagLeido = 3; }
+    if (tag == 2) {
+      camino = 2;
+      tagLeido = 2;
+    } else if (tag == 3) {
+      camino = 3;
+      tagLeido = 3;
+    }
     return;
   }
 
   switch (camino) {
     case 2:
-      if (tag == 255) { camino = 1; tagLeido = 1; }
-      else tagLeido = 4;
+      if (tag == 255) {
+        apagarMotores = true;
+        apagaLEDs = true;
+        camino = 1;
+        tagLeido = 1;
+      } else tagLeido = 4;
       break;
     case 3:
-      if (tag == 255) { camino = 1; tagLeido = 1; }
-      else tagLeido = 4;
+      if (tag == 255) {
+        apagaLEDs = true;
+        camino = 1;
+        tagLeido = 1;
+        apagarMotores = true;
+      } else tagLeido = 4;
       break;
     case 1:
-      if (tag == 2) { camino = 2; tagLeido = 2; }
-      else if (tag == 3) { camino = 3; tagLeido = 3; }
-      else tagLeido = 4;
+      if (tag == 2) {
+        camino = 2;
+        tagLeido = 2;
+      } else if (tag == 3) {
+        camino = 3;
+        tagLeido = 3;
+      } else tagLeido = 4;
       break;
     default:
       tagLeido = 4;
@@ -258,15 +290,27 @@ void loop() {
       dir = lecturaSensor();
 
       // 4) Vel
-      int vOut = 0;
-      char dirOut = dir;
+      vOut = 0;
+      dirOut = dir;
 
-      if (dir == 'o') vOut = velRecto;
-      else if ((dir == 'n') || (dir == 'p')) vOut = velGiro1;
-      else if ((dir == 'm') || (dir == 'q')) vOut = velGiro1;
-      else if ((dir == 'l') || (dir == 'r')) vOut = velGiro2;
-      else if ((dir == 'k') || (dir == 's')) vOut = velGiro3;
-      else vOut = 0;
+      if (tagLeido == 4) {
+        dir = 'z';
+        vOut = 0;
+      } else if (apagarMotores == true) {
+        dir = 'z';
+        vOut = 0;
+        delay(2000);
+        apagarMotores = false;
+
+      } else {
+        if (dir == 'o') vOut = velRecto;
+        else if ((dir == 'n') || (dir == 'p')) vOut = velGiro1;
+        else if ((dir == 'm') || (dir == 'q')) vOut = velGiro1;
+        else if ((dir == 'l') || (dir == 'r')) vOut = velGiro2;
+        else if ((dir == 'k') || (dir == 's')) vOut = velGiro3;
+        else vOut = 0;
+      }
+
 
       // ✅ CLAU: enviem camino com a zonaTarget (mana la RFID de la MEGA)
       sendCmd(camino, dirOut, vOut);
