@@ -123,6 +123,12 @@ char lecturaSensor() {
   static char ultimaDirValida = 'z';
   static uint8_t missCount = 0;
 
+  if (apagarMotores) {
+    ultimaDirValida = 'z';
+    missCount = MAX_MISS;
+    return 'z';
+  }
+
   char direccion = 'z';
 
   bool sensor1 = digitalRead(PinSensor1);
@@ -133,7 +139,8 @@ char lecturaSensor() {
 
   if (camino == 3 && sensor5) {
     direccion = 's';
-  } else if (camino != 3 && (sensor1 && sensor2)) {
+  } 
+  else if (camino != 3 && (sensor1 && sensor2)) {
     direccion = 'l';
   } else if (camino != 3 && (sensor2 && sensor3)) {
     direccion = 'n';
