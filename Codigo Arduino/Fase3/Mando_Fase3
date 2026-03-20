@@ -1,0 +1,148 @@
+#include <ArduinoBLE.h>
+#include <Arduino_LSM6DSOX.h>
+
+// ================= PINES =================
+#define PIN_D2 2
+#define PIN_D3 3
+#define PIN_D4 4
+
+// ================= ACELERÓMETRO =================
+float Ax, Ay, Az;
+
+// ================= ESTADO =================
+bool habManual = false;
+int  caminoSel = 0;
+bool ultimoD2  = HIGH;
+bool ultimoD3  = HIGH;
+bool ultimoD4  = HIGH;
+
+// ================= BLE =================
+BLEService S("19B10000-E8F2-537E-4F6C-D104768A1214");
+
+BLEFloatCharacteristic X            ("19B10001-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
+BLEFloatCharacteristic Y            ("19B10002-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
+BLEFloatCharacteristic Vel          ("19B10003-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
+BLEIntCharacteristic   Camino       ("19B10004-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
+BLEByteCharacteristic  GiroDerecha  ("19B10005-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
+BLEByteCharacteristic  GiroIzquierda("19B10006-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
+BLEByteCharacteristic  HabilitarMan ("19B10007-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
+
+// ================= SETUP =================
+void setup() {
+  Serial.begin(9600);
+
+  pinMode(PIN_D2, INPUT_PULLUP);
+  pinMode(PIN_D3, INPUT_PULLUP);
+  pinMode(PIN_D4, INPUT_PULLUP);
+
+  if (!BLE.begin()) {
+    Serial.println("BLE FALLO");
+    while (1);
+  }
+  if (!IMU.begin()) {
+    Serial.println("IMU FALLO");
+    while (1);
+  }
+
+  BLE.setLocalName("Mando Kuki");
+  BLE.setAdvertisedService(S);
+  S.addCharacteristic(X);
+  S.addCharacteristic(Y);
+  S.addCharacteristic(Vel);
+  S.addCharacteristic(Camino);
+  S.addCharacteristic(GiroDerecha);
+  S.addCharacteristic(GiroIzquierda);
+  S.addCharacteristic(HabilitarMan);
+  BLE.addService(S);
+  BLE.advertise();
+
+  Serial.println("Mando KUKI listo, esperando conexion...");
+}
+
+// ================= LOOP =================
+void loop() {
+  BLEDevice central = BLE.central();
+
+  if (central) {
+    Serial.print("Conectado: ");
+    Serial.println(central.address());
+
+    while (central.connected()) {
+      leerBotones();
+      lectura();
+      delay(100);
+    }
+
+    Serial.println("Desconectado");
+  }
+}
+
+// ================= BOTONES =================
+void leerBotones() {
+  bool d2 = digitalRead(PIN_D2);
+  bool d3 = digitalRead(PIN_D3);
+  bool d4 = digitalRead(PIN_D4);
+
+  // D4 — toggle habilitar manual (flanco bajada)
+  if (d4 == LOW && ultimoD4 == HIGH) {
+    habManual = !habManual;
+    Serial.print("Manual: ");
+    Serial.println(habManual ? "ON" : "OFF");
+  }
+
+  if (!habManual) {
+    // D2 = camino corto (flanco bajada)
+    if (d2 == LOW && ultimoD2 == HIGH) {
+      caminoSel = 2;
+      Serial.println("Camino: CORTO (2)");
+    }
+    // D3 = camino largo (flanco bajada)
+    if (d3 == LOW && ultimoD3 == HIGH) {
+      caminoSel = 3;
+      Serial.println("Camino: LARGO (3)");
+    }
+  }
+
+  ultimoD2 = d2;
+  ultimoD3 = d3;
+  ultimoD4 = d4;
+}
+
+// ================= LECTURA =================
+void lectura() {
+  // --- Acelerómetro --- solo en modo manual
+  if (IMU.accelerationAvailable()) {
+    IMU.readAcceleration(Ax, Ay, Az);
+    if (habManual) {
+      X.writeValue(Ax);
+      Y.writeValue(Ay);
+    } else {
+      X.writeValue(0.0f);
+      Y.writeValue(0.0f);
+    }
+  }
+
+  // --- Potenciómetro ---
+  int lectPot = analogRead(A1);
+  float potVel = ((float)lectPot / 1023.0) * 255.0;
+  Vel.writeValue(potVel);
+
+  // --- Botones en modo manual ---
+  bool der = false;
+  bool izq = false;
+
+  if (habManual) {
+    der = (digitalRead(PIN_D2) == LOW);
+    izq = (digitalRead(PIN_D3) == LOW);
+  }
+
+  GiroDerecha.writeValue  ((uint8_t)(der       ? 1 : 0));
+  GiroIzquierda.writeValue((uint8_t)(izq       ? 1 : 0));
+  HabilitarMan.writeValue ((uint8_t)(habManual  ? 1 : 0));
+  Camino.writeValue((int)caminoSel);
+
+  Serial.print("Camino:"); Serial.print(caminoSel);
+  Serial.print(" Hab:");   Serial.print(habManual);
+  Serial.print(" Der:");   Serial.print(der);
+  Serial.print(" Izq:");   Serial.println(izq);
+}
