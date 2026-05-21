@@ -1,3 +1,4 @@
+
 /* Esclavo (MEGA2560) — con RFID + ultrasonido + motores */
 #include <SPI.h>
 #include <MFRC522.h>
@@ -151,17 +152,17 @@ void moveKUKI(char direccion, bool parada, int velPWM) {
       break;
 
     case 'i':
-      digitalWrite(motor1A, LOW);  digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);  digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
+      digitalWrite(motor1A, HIGH);  digitalWrite(motor1B, LOW);
+      digitalWrite(motor2A, LOW); digitalWrite(motor2B, HIGH);
+      digitalWrite(motor3A, HIGH);  digitalWrite(motor3B, LOW);
+      digitalWrite(motor4A, LOW); digitalWrite(motor4B, HIGH);
       break;
 
     case 'j':
       digitalWrite(motor1A, LOW);  digitalWrite(motor1B, HIGH);
       digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);  digitalWrite(motor4B, HIGH);
+      digitalWrite(motor3A, LOW);  digitalWrite(motor3B, HIGH);
+      digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
       break;
 
     case 'k': case 'l': case 'm': case 'n':
@@ -321,7 +322,7 @@ void loop() {
   if (readLineSerial1(line)) {
 
     msg = line;
-
+    Serial.println(msg);
     if (msg.length() >= 3) {
       const char zc = msg[0];
       const char dcIn = msg[1];
@@ -333,8 +334,7 @@ void loop() {
       vel = constrain(vIn, 0, 255);
 
       char dc = dcIn;
-      if (zonaActual == 0 || vel == 0)
-        dc = 'z';
+      
 
       moveKUKI(dc, paradaEmergencia, vel);
 
