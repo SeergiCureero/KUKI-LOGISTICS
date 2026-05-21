@@ -1,5 +1,14 @@
 #include <ArduinoBLE.h>
 #include <Arduino_LSM6DSOX.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+// ================= OLED =================
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET    -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // ================= PINES =================
 #define PIN_D2 2
@@ -16,16 +25,79 @@ bool ultimoD2  = HIGH;
 bool ultimoD3  = HIGH;
 bool ultimoD4  = HIGH;
 
-// ================= BLE =================
-BLEService S("19B10000-E8F2-537E-4F6C-D104768A1214");
+// ================= PANTALLA =================
+void mostrarBuscando() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("  == KUKI MANDO ==");
+  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+  display.setCursor(0, 18);
+  display.println("Buscando AGV...");
+  display.setCursor(0, 30);
+  display.println("Asegurate de que");
+  display.println("el KUKI este");
+  display.println("encendido");
+  display.display();
+}
 
-BLEFloatCharacteristic X            ("19B10001-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
-BLEFloatCharacteristic Y            ("19B10002-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
-BLEFloatCharacteristic Vel          ("19B10003-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
-BLEIntCharacteristic   Camino       ("19B10004-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
-BLEByteCharacteristic  GiroDerecha  ("19B10005-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
-BLEByteCharacteristic  GiroIzquierda("19B10006-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
-BLEByteCharacteristic  HabilitarMan ("19B10007-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify | BLEWrite);
+void mostrarConectado(int camino, bool manual, float vel, bool der, bool izq) {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+
+  // Cabecera
+  display.setCursor(0, 0);
+  display.println("  == KUKI MANDO ==");
+  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+
+  // Modo
+  display.setCursor(0, 14);
+  display.print("Modo: ");
+  display.setTextSize(2);
+  display.setCursor(40, 12);
+  display.println(manual ? "MANUAL" : "AUTO");
+  display.setTextSize(1);
+
+  // Camino
+  display.setCursor(0, 32);
+  display.print("Camino: ");
+  if      (camino == 0) display.println("--");
+  else if (camino == 2) display.println("CORTO (2)");
+  else if (camino == 3) display.println("LARGO (3)");
+
+  // Velocidad
+  display.setCursor(0, 43);
+  display.print("Vel: ");
+  display.print((int)vel);
+  display.println("/255");
+
+  // Giros (solo en manual)
+  if (manual) {
+    display.setCursor(0, 54);
+    display.print("Giro: ");
+    if      (der) display.println("DERECHA >>>");
+    else if (izq) display.println("<<< IZQUIERDA");
+    else          display.println("---");
+  }
+
+  display.display();
+}
+
+void mostrarDesconectado() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("  == KUKI MANDO ==");
+  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+  display.setCursor(0, 20);
+  display.println("AGV desconectado");
+  display.setCursor(0, 35);
+  display.println("Reconectando...");
+  display.display();
+}
 
 // ================= SETUP =================
 void setup() {
@@ -34,6 +106,14 @@ void setup() {
   pinMode(PIN_D2, INPUT_PULLUP);
   pinMode(PIN_D3, INPUT_PULLUP);
   pinMode(PIN_D4, INPUT_PULLUP);
+
+  // OLED
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("OLED FALLO");
+    while (1);
+  }
+  display.clearDisplay();
+  display.display();
 
   if (!BLE.begin()) {
     Serial.println("BLE FALLO");
@@ -44,37 +124,71 @@ void setup() {
     while (1);
   }
 
-  BLE.setLocalName("Mando Kuki");
-  BLE.setAdvertisedService(S);
-  S.addCharacteristic(X);
-  S.addCharacteristic(Y);
-  S.addCharacteristic(Vel);
-  S.addCharacteristic(Camino);
-  S.addCharacteristic(GiroDerecha);
-  S.addCharacteristic(GiroIzquierda);
-  S.addCharacteristic(HabilitarMan);
-  BLE.addService(S);
-  BLE.advertise();
-
-  Serial.println("Mando KUKI listo, esperando conexion...");
+  mostrarBuscando();
+  Serial.println("Mando KUKI listo, buscando KUKI AGV...");
+  BLE.scanForUuid("19B10000-E8F2-537E-4F6C-D104768A1214");
 }
 
 // ================= LOOP =================
 void loop() {
-  BLEDevice central = BLE.central();
+  BLEDevice peripheral = BLE.available();
 
-  if (central) {
-    Serial.print("Conectado: ");
-    Serial.println(central.address());
+  if (peripheral) {
+    Serial.print("Encontrado: ");
+    Serial.println(peripheral.localName());
 
-    while (central.connected()) {
-      leerBotones();
-      lectura();
-      delay(100);
+    if (peripheral.localName().indexOf("Mando Kuki") >= 0) {
+      BLE.stopScan();
+      controlar(peripheral);
+      mostrarDesconectado();
+      BLE.scanForUuid("19B10000-E8F2-537E-4F6C-D104768A1214");
     }
-
-    Serial.println("Desconectado");
   }
+}
+
+// ================= CONTROLAR =================
+void controlar(BLEDevice peripheral) {
+  if (!peripheral.connect()) {
+    Serial.println("Fallo al conectar");
+    return;
+  }
+  Serial.println("Conectado al KUKI AGV");
+
+  if (!peripheral.discoverAttributes()) {
+    Serial.println("Fallo descubriendo atributos");
+    peripheral.disconnect();
+    return;
+  }
+
+  BLECharacteristic charX   = peripheral.characteristic("19b10001-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic charY   = peripheral.characteristic("19b10002-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic charVel = peripheral.characteristic("19b10003-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic charCam = peripheral.characteristic("19b10004-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic charDer = peripheral.characteristic("19b10005-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic charIzq = peripheral.characteristic("19b10006-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic charHab = peripheral.characteristic("19b10007-e8f2-537e-4f6c-d104768a1214");
+
+  if (!charX || !charY || !charVel || !charCam || !charDer || !charIzq || !charHab) {
+    Serial.println("Faltan caracteristicas");
+    peripheral.disconnect();
+    return;
+  }
+
+  while (peripheral.connected()) {
+    leerBotones();
+
+    int   lectPot = analogRead(A1);
+    float potVel  = ((float)lectPot / 1023.0f) * 255.0f;
+    bool  der     = (habManual && digitalRead(PIN_D2) == LOW);
+    bool  izq     = (habManual && digitalRead(PIN_D3) == LOW);
+
+    lectura(charX, charY, charVel, charCam, charDer, charIzq, charHab);
+    mostrarConectado(caminoSel, habManual, potVel, der, izq);
+
+    delay(100);
+  }
+
+  Serial.println("Desconectado del KUKI AGV");
 }
 
 // ================= BOTONES =================
@@ -83,7 +197,6 @@ void leerBotones() {
   bool d3 = digitalRead(PIN_D3);
   bool d4 = digitalRead(PIN_D4);
 
-  // D4 — toggle habilitar manual (flanco bajada)
   if (d4 == LOW && ultimoD4 == HIGH) {
     habManual = !habManual;
     Serial.print("Manual: ");
@@ -91,12 +204,10 @@ void leerBotones() {
   }
 
   if (!habManual) {
-    // D2 = camino corto (flanco bajada)
     if (d2 == LOW && ultimoD2 == HIGH) {
       caminoSel = 2;
       Serial.println("Camino: CORTO (2)");
     }
-    // D3 = camino largo (flanco bajada)
     if (d3 == LOW && ultimoD3 == HIGH) {
       caminoSel = 3;
       Serial.println("Camino: LARGO (3)");
@@ -108,38 +219,33 @@ void leerBotones() {
   ultimoD4 = d4;
 }
 
-// ================= LECTURA =================
-void lectura() {
-  // --- Acelerómetro --- solo en modo manual
+// ================= LECTURA Y ENVÍO =================
+void lectura(BLECharacteristic &charX, BLECharacteristic &charY,
+             BLECharacteristic &charVel, BLECharacteristic &charCam,
+             BLECharacteristic &charDer, BLECharacteristic &charIzq,
+             BLECharacteristic &charHab) {
+
+  float valX = 0.0f, valY = 0.0f;
   if (IMU.accelerationAvailable()) {
     IMU.readAcceleration(Ax, Ay, Az);
-    if (habManual) {
-      X.writeValue(Ax);
-      Y.writeValue(Ay);
-    } else {
-      X.writeValue(0.0f);
-      Y.writeValue(0.0f);
-    }
+    if (habManual) { valX = Ax; valY = Ay; }
   }
+  charX.writeValue((uint8_t*)&valX, 4);
+  charY.writeValue((uint8_t*)&valY, 4);
 
-  // --- Potenciómetro ---
   int lectPot = analogRead(A1);
-  float potVel = ((float)lectPot / 1023.0) * 255.0;
-  Vel.writeValue(potVel);
+  float potVel = ((float)lectPot / 1023.0f) * 255.0f;
+  charVel.writeValue((uint8_t*)&potVel, 4);
 
-  // --- Botones en modo manual ---
-  bool der = false;
-  bool izq = false;
+  charCam.writeValue((uint8_t*)&caminoSel, 4);
 
-  if (habManual) {
-    der = (digitalRead(PIN_D2) == LOW);
-    izq = (digitalRead(PIN_D3) == LOW);
-  }
+  uint8_t der = (habManual && digitalRead(PIN_D2) == LOW) ? 1 : 0;
+  uint8_t izq = (habManual && digitalRead(PIN_D3) == LOW) ? 1 : 0;
+  charDer.writeValue(&der, 1);
+  charIzq.writeValue(&izq, 1);
 
-  GiroDerecha.writeValue  ((uint8_t)(der       ? 1 : 0));
-  GiroIzquierda.writeValue((uint8_t)(izq       ? 1 : 0));
-  HabilitarMan.writeValue ((uint8_t)(habManual  ? 1 : 0));
-  Camino.writeValue((int)caminoSel);
+  uint8_t hab = habManual ? 1 : 0;
+  charHab.writeValue(&hab, 1);
 
   Serial.print("Camino:"); Serial.print(caminoSel);
   Serial.print(" Hab:");   Serial.print(habManual);
