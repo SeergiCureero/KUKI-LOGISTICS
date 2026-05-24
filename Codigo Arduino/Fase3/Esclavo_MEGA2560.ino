@@ -1,4 +1,3 @@
-
 /* Esclavo (MEGA2560) — con RFID + ultrasonido + motores */
 #include <SPI.h>
 #include <MFRC522.h>
@@ -34,7 +33,6 @@ bool paradaEmergencia = false;
 #define DISTANCIA_PARADA 25
 
 // ================= ZONA / RFID CONTROL =================
-// IMPORTANT: ara aquesta zona la MANA la RP2040
 int zonaActual = 0;
 
 unsigned long ultimoEnvio = 0;
@@ -43,6 +41,9 @@ bool tarjetaDetectada = false;
 
 int lastZonaSent = -1;
 byte lastValorSent = 0x00;
+
+// ================= PARADA EMERGENCIA =================
+bool ultimaParadaEnviada = false;
 
 // ================= ULTRASONIDO: medir distancia =================
 int medirDistancia() {
@@ -53,7 +54,7 @@ int medirDistancia() {
   digitalWrite(trigPin, LOW);
 
   long tiempo = pulseIn(echoPin, HIGH, 30000);
-  if (tiempo == 0) return 999;  // sin eco = libre
+  if (tiempo == 0) return 999;
 
   return (int)(tiempo * 0.034 / 2);
 }
@@ -76,7 +77,7 @@ static bool readLineSerial1(String &out) {
     }
 
     if (idx < sizeof(buf) - 1) buf[idx++] = c;
-    else idx = 0;  // overflow -> reset
+    else idx = 0;
   }
   return false;
 }
@@ -152,10 +153,10 @@ void moveKUKI(char direccion, bool parada, int velPWM) {
       break;
 
     case 'i':
-      digitalWrite(motor1A, HIGH);  digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW); digitalWrite(motor2B, HIGH);
-      digitalWrite(motor3A, HIGH);  digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW); digitalWrite(motor4B, HIGH);
+      digitalWrite(motor1A, HIGH); digitalWrite(motor1B, LOW);
+      digitalWrite(motor2A, LOW);  digitalWrite(motor2B, HIGH);
+      digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
+      digitalWrite(motor4A, LOW);  digitalWrite(motor4B, HIGH);
       break;
 
     case 'j':
@@ -317,10 +318,20 @@ void loop() {
   // 2️⃣ Buzzer independiente
   digitalWrite(buzzer, paradaEmergencia ? HIGH : LOW);
 
-  // 3️⃣ RX desde RP2040
+  // 3️⃣ Enviar estado de parada al RP2040 cuando cambia
+  if (paradaEmergencia && !ultimaParadaEnviada) {
+    Serial1.println("P1");
+    ultimaParadaEnviada = true;
+    Serial.println("TX Parada -> P1");
+  } else if (!paradaEmergencia && ultimaParadaEnviada) {
+    Serial1.println("P0");
+    ultimaParadaEnviada = false;
+    Serial.println("TX Parada -> P0");
+  }
+
+  // 4️⃣ RX desde RP2040
   String line;
   if (readLineSerial1(line)) {
-
     msg = line;
     Serial.println(msg);
     if (msg.length() >= 3) {
@@ -333,17 +344,14 @@ void loop() {
 
       vel = constrain(vIn, 0, 255);
 
-      char dc = dcIn;
-      
-
-      moveKUKI(dc, paradaEmergencia, vel);
+      moveKUKI(dcIn, paradaEmergencia, vel);
 
       Serial.print("RX <- ");
       Serial.print(msg);
       Serial.print(" | zonaTarget=");
       Serial.print(zonaActual);
       Serial.print(" | dir=");
-      Serial.print(dc);
+      Serial.print(dcIn);
       Serial.print(" | vel=");
       Serial.print(vel);
       Serial.print(" | parada=");
@@ -351,6 +359,6 @@ void loop() {
     }
   }
 
-  // 4️⃣ RFID
+  // 5️⃣ RFID
   RFID();
 }
