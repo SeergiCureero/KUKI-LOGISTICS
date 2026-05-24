@@ -14,18 +14,23 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 #define PIN_D2 2
 #define PIN_D3 3
 #define PIN_D4 4
+#define PIN_D5 5  // boton parada → camino 0
 
 // ================= ACELERÓMETRO =================
 float Ax, Ay, Az;
 
 // ================= ESTADO =================
-bool habManual = false;
-int  caminoSel = 0;
-bool ultimoD2  = HIGH;
-bool ultimoD3  = HIGH;
-bool ultimoD4  = HIGH;
+bool habManual  = false;
+int  caminoSel  = 0;
+bool sinFilo    = false;
+bool paradaEmg  = false;
 
-// ================= PANTALLA =================
+bool ultimoD2 = HIGH;
+bool ultimoD3 = HIGH;
+bool ultimoD4 = HIGH;
+bool ultimoD5 = HIGH;
+
+// ================= PANTALLAS =================
 void mostrarBuscando() {
   display.clearDisplay();
   display.setTextSize(1);
@@ -47,12 +52,10 @@ void mostrarConectado(int camino, bool manual, float vel, bool der, bool izq) {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  // Cabecera
   display.setCursor(0, 0);
   display.println("  == KUKI MANDO ==");
   display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
 
-  // Modo
   display.setCursor(0, 14);
   display.print("Modo: ");
   display.setTextSize(2);
@@ -60,20 +63,17 @@ void mostrarConectado(int camino, bool manual, float vel, bool der, bool izq) {
   display.println(manual ? "MANUAL" : "AUTO");
   display.setTextSize(1);
 
-  // Camino
   display.setCursor(0, 32);
   display.print("Camino: ");
   if      (camino == 0) display.println("--");
   else if (camino == 2) display.println("CORTO (2)");
   else if (camino == 3) display.println("LARGO (3)");
 
-  // Velocidad
   display.setCursor(0, 43);
   display.print("Vel: ");
   display.print((int)vel);
   display.println("/255");
 
-  // Giros (solo en manual)
   if (manual) {
     display.setCursor(0, 54);
     display.print("Giro: ");
@@ -99,6 +99,42 @@ void mostrarDesconectado() {
   display.display();
 }
 
+void mostrarParada() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("  == KUKI MANDO ==");
+  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+  display.setTextSize(2);
+  display.setCursor(10, 18);
+  display.println("! PARADA !");
+  display.setCursor(4, 36);
+  display.println("EMERGENCIA");
+  display.setTextSize(1);
+  display.setCursor(20, 56);
+  display.println("Obstaculo cercano");
+  display.display();
+}
+
+void mostrarSinFilo() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("  == KUKI MANDO ==");
+  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+  display.setTextSize(2);
+  display.setCursor(16, 18);
+  display.println("SIN FILO");
+  display.setTextSize(1);
+  display.setCursor(10, 40);
+  display.println("El KUKI ha perdido");
+  display.setCursor(10, 52);
+  display.println("la linea guia");
+  display.display();
+}
+
 // ================= SETUP =================
 void setup() {
   Serial.begin(9600);
@@ -106,8 +142,8 @@ void setup() {
   pinMode(PIN_D2, INPUT_PULLUP);
   pinMode(PIN_D3, INPUT_PULLUP);
   pinMode(PIN_D4, INPUT_PULLUP);
+  pinMode(PIN_D5, INPUT_PULLUP);
 
-  // OLED
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println("OLED FALLO");
     while (1);
@@ -160,30 +196,63 @@ void controlar(BLEDevice peripheral) {
     return;
   }
 
-  BLECharacteristic charX   = peripheral.characteristic("19b10001-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic charY   = peripheral.characteristic("19b10002-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic charVel = peripheral.characteristic("19b10003-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic charCam = peripheral.characteristic("19b10004-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic charDer = peripheral.characteristic("19b10005-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic charIzq = peripheral.characteristic("19b10006-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic charHab = peripheral.characteristic("19b10007-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic charX        = peripheral.characteristic("19b10001-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic charY        = peripheral.characteristic("19b10002-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic charVel      = peripheral.characteristic("19b10003-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic charCamino   = peripheral.characteristic("19b10004-e8f2-537e-4f6c-d104768a1214");  // solo lectura/notify
+  BLECharacteristic charCaminoCmd= peripheral.characteristic("19b10009-e8f2-537e-4f6c-d104768a1214");  // escritura camino
+  BLECharacteristic charDer      = peripheral.characteristic("19b10005-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic charIzq      = peripheral.characteristic("19b10006-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic charHab      = peripheral.characteristic("19b10007-e8f2-537e-4f6c-d104768a1214");
+  BLECharacteristic charSinFiloC = peripheral.characteristic("19b10008-e8f2-537e-4f6c-d104768a1214");  // notify sin filo
+  BLECharacteristic charParadaC  = peripheral.characteristic("19b1000a-e8f2-537e-4f6c-d104768a1214");  // notify parada
 
-  if (!charX || !charY || !charVel || !charCam || !charDer || !charIzq || !charHab) {
+  if (!charX || !charY || !charVel || !charCamino || !charCaminoCmd ||
+      !charDer || !charIzq || !charHab || !charSinFiloC || !charParadaC) {
     Serial.println("Faltan caracteristicas");
     peripheral.disconnect();
     return;
   }
 
+  // Suscribirse a notificaciones
+  charCamino.subscribe();
+  charSinFiloC.subscribe();
+  charParadaC.subscribe();
+
   while (peripheral.connected()) {
-    leerBotones();
+    leerBotones(charCaminoCmd);
+
+    // Leer notificaciones del RP2040
+    if (charSinFiloC.valueUpdated()) {
+      uint8_t val = 0;
+      charSinFiloC.readValue(&val, 1);
+      sinFilo = (val == 1);
+      Serial.print("SinFilo: "); Serial.println(sinFilo);
+    }
+    if (charParadaC.valueUpdated()) {
+      uint8_t val = 0;
+      charParadaC.readValue(&val, 1);
+      paradaEmg = (val == 1);
+      Serial.print("Parada: "); Serial.println(paradaEmg);
+    }
+    if (charCamino.valueUpdated()) {
+      uint8_t val = 0;
+      charCamino.readValue(&val, 1);
+      caminoSel = val;
+      Serial.print("Camino actualizado: "); Serial.println(caminoSel);
+    }
 
     int   lectPot = analogRead(A1);
     float potVel  = ((float)lectPot / 1023.0f) * 255.0f;
     bool  der     = (habManual && digitalRead(PIN_D2) == LOW);
     bool  izq     = (habManual && digitalRead(PIN_D3) == LOW);
 
-    lectura(charX, charY, charVel, charCam, charDer, charIzq, charHab);
-    mostrarConectado(caminoSel, habManual, potVel, der, izq);
+    enviar(charX, charY, charVel, charDer, charIzq, charHab);
+
+    // Pantalla: parada tiene prioridad sobre sin filo
+    if (paradaEmg)       mostrarParada();
+    else if (sinFilo)    mostrarSinFilo();
+    else                 mostrarConectado(caminoSel, habManual, potVel, der, izq);
 
     delay(100);
   }
@@ -192,11 +261,13 @@ void controlar(BLEDevice peripheral) {
 }
 
 // ================= BOTONES =================
-void leerBotones() {
+void leerBotones(BLECharacteristic &charCaminoCmd) {
   bool d2 = digitalRead(PIN_D2);
   bool d3 = digitalRead(PIN_D3);
   bool d4 = digitalRead(PIN_D4);
+  bool d5 = digitalRead(PIN_D5);
 
+  // D4: toggle manual/auto
   if (d4 == LOW && ultimoD4 == HIGH) {
     habManual = !habManual;
     Serial.print("Manual: ");
@@ -204,26 +275,38 @@ void leerBotones() {
   }
 
   if (!habManual) {
+    // D2: camino 2 (corto)
     if (d2 == LOW && ultimoD2 == HIGH) {
-      caminoSel = 2;
-      Serial.println("Camino: CORTO (2)");
+      uint8_t cmd = 2;
+      charCaminoCmd.writeValue(&cmd, 1);
+      Serial.println("Camino cmd: 2");
     }
+    // D3: camino 3 (largo)
     if (d3 == LOW && ultimoD3 == HIGH) {
-      caminoSel = 3;
-      Serial.println("Camino: LARGO (3)");
+      uint8_t cmd = 3;
+      charCaminoCmd.writeValue(&cmd, 1);
+      Serial.println("Camino cmd: 3");
     }
+  }
+
+  // D5: parada → camino 0
+  if (d5 == LOW && ultimoD5 == HIGH) {
+    uint8_t cmd = 0;
+    charCaminoCmd.writeValue(&cmd, 1);
+    Serial.println("Camino cmd: 0 (PARADA)");
   }
 
   ultimoD2 = d2;
   ultimoD3 = d3;
   ultimoD4 = d4;
+  ultimoD5 = d5;
 }
 
-// ================= LECTURA Y ENVÍO =================
-void lectura(BLECharacteristic &charX, BLECharacteristic &charY,
-             BLECharacteristic &charVel, BLECharacteristic &charCam,
-             BLECharacteristic &charDer, BLECharacteristic &charIzq,
-             BLECharacteristic &charHab) {
+// ================= ENVIAR =================
+void enviar(BLECharacteristic &charX, BLECharacteristic &charY,
+            BLECharacteristic &charVel,
+            BLECharacteristic &charDer, BLECharacteristic &charIzq,
+            BLECharacteristic &charHab) {
 
   float valX = 0.0f, valY = 0.0f;
   if (IMU.accelerationAvailable()) {
@@ -236,8 +319,6 @@ void lectura(BLECharacteristic &charX, BLECharacteristic &charY,
   int lectPot = analogRead(A1);
   float potVel = ((float)lectPot / 1023.0f) * 255.0f;
   charVel.writeValue((uint8_t*)&potVel, 4);
-
-  charCam.writeValue((uint8_t*)&caminoSel, 4);
 
   uint8_t der = (habManual && digitalRead(PIN_D2) == LOW) ? 1 : 0;
   uint8_t izq = (habManual && digitalRead(PIN_D3) == LOW) ? 1 : 0;
