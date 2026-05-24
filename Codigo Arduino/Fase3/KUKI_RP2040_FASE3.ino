@@ -6,12 +6,13 @@ BLEService kukiService("19b10000-e8f2-537e-4f6c-d104768a1214");
 BLECharacteristic charX("19b10001-e8f2-537e-4f6c-d104768a1214", BLEWrite | BLERead, 4);
 BLECharacteristic charY("19b10002-e8f2-537e-4f6c-d104768a1214", BLEWrite | BLERead, 4);
 BLECharacteristic charVel("19b10003-e8f2-537e-4f6c-d104768a1214", BLEWrite | BLERead, 4);
-BLECharacteristic charCamino("19b10004-e8f2-537e-4f6c-d104768a1214", BLERead | BLENotify, 1);    // Arduino → App (solo notifica)
+BLECharacteristic charCamino("19b10004-e8f2-537e-4f6c-d104768a1214", BLERead | BLENotify, 1);     // Arduino → App (solo notifica)
 BLECharacteristic charCaminoCmd("19b10009-e8f2-537e-4f6c-d104768a1214", BLEWrite | BLERead, 1);  // App → Arduino (comando puntual)
 BLECharacteristic charDer("19b10005-e8f2-537e-4f6c-d104768a1214", BLEWrite | BLERead, 1);
 BLECharacteristic charIzq("19b10006-e8f2-537e-4f6c-d104768a1214", BLEWrite | BLERead, 1);
 BLECharacteristic charHab("19b10007-e8f2-537e-4f6c-d104768a1214", BLEWrite | BLERead, 1);
-BLECharacteristic charSinFilo("19b10008-e8f2-537e-4f6c-d104768a1214", BLERead | BLENotify, 1);  // Arduino → App (sin filo)
+BLECharacteristic charSinFilo("19b10008-e8f2-537e-4f6c-d104768a1214", BLERead | BLENotify, 1);   // Arduino → App (sin filo)
+BLECharacteristic charParada("19b1000a-e8f2-537e-4f6c-d104768a1214", BLERead | BLENotify, 1);    // Arduino → App (parada emergencia)
 
 // ================= VARIABLES =================
 char dir;
@@ -33,6 +34,8 @@ bool apagarMotores = false;
 const unsigned long PERIODO_MS = 100;
 unsigned long tiempoActualLectura = 0;
 
+float velAuto = 50.0f;  // velocidad automatico, arranca a 50, modificable desde app
+
 #define Luz_VERDE 5
 #define Luz_ROJO 6
 #define Luz_Man 7
@@ -52,11 +55,10 @@ uint8_t tagLeido = 0;
 BLEDevice central;
 
 // ================= CAMINO CON NOTIFY =================
-// Toda modificacion de camino pasa por aqui para notificar a la app
 static void setCamino(uint8_t nuevoCamino) {
   camino = nuevoCamino;
   uint8_t c = nuevoCamino;
-  charCamino.writeValue(&c, 1);  // notifica automaticamente a la app via BLENotify
+  charCamino.writeValue(&c, 1);
   Serial.print("setCamino -> ");
   Serial.println(camino);
 }
@@ -160,7 +162,6 @@ char lecturaSensor() {
     ultimaDirValida = direccion;
     missCount = 0;
 
-    // Limpiar flag sin filo
     uint8_t sinFilo = 0;
     charSinFilo.writeValue(&sinFilo, 1);
 
@@ -173,7 +174,6 @@ char lecturaSensor() {
     const bool tick = ((millis() / 250) % 2) == 0;
     setLeds(!tick, tick);
 
-    // Notificar a la app que no hay filo
     uint8_t sinFilo = 1;
     charSinFilo.writeValue(&sinFilo, 1);
 
@@ -193,10 +193,10 @@ static void applyTag(uint8_t tag) {
   }
   if (camino == 0 || tagLeido == 0) {
     if (tag == 2) {
-      setCamino(2);  // ← setCamino en vez de camino =
+      setCamino(2);
       tagLeido = 2;
     } else if (tag == 3) {
-      setCamino(3);  // ← setCamino en vez de camino =
+      setCamino(3);
       tagLeido = 3;
     }
     return;
@@ -206,24 +206,24 @@ static void applyTag(uint8_t tag) {
       if (tag == 255) {
         apagarMotores = true;
         apagaLEDs = true;
-        setCamino(1);  // ← setCamino en vez de camino =
+        setCamino(1);
         tagLeido = 1;
       } else tagLeido = 4;
       break;
     case 3:
       if (tag == 255) {
         apagaLEDs = true;
-        setCamino(1);  // ← setCamino en vez de camino =
+        setCamino(1);
         tagLeido = 1;
         apagarMotores = true;
       } else tagLeido = 4;
       break;
     case 1:
       if (tag == 2) {
-        setCamino(2);  // ← setCamino en vez de camino =
+        setCamino(2);
         tagLeido = 2;
       } else if (tag == 3) {
-        setCamino(3);  // ← setCamino en vez de camino =
+        setCamino(3);
         tagLeido = 3;
       } else tagLeido = 4;
       break;
@@ -235,6 +235,17 @@ void leerMega() {
   String line;
   if (!readLineSerial1(line)) return;
   line.trim();
+
+  // ── Mensaje de parada de emergencia desde Mega ──
+  if (line.length() >= 2 && line[0] == 'P') {
+    uint8_t parada = (line[1] == '1') ? 1 : 0;
+    charParada.writeValue(&parada, 1);
+    Serial.print("Parada emergencia -> ");
+    Serial.println(parada);
+    return;
+  }
+
+  // ── Mensaje RFID normal ──
   msgMega = line;
   if (msgMega.length() < 5 || msgMega[0] != 'Z' || msgMega[2] != ':') return;
   uint8_t z = (uint8_t)(msgMega[1] - '0');
@@ -264,7 +275,7 @@ static void leerCaminoCmd() {
     Serial.println(caminoCmd);
   }
 
-  // Limpiar poniendo 255 en vez de 0
+  // Limpiar poniendo 255 para no aplicarlo otra vez
   if (caminoCmd != 255) {
     uint8_t nada = 255;
     charCaminoCmd.writeValue(&nada, 1);
@@ -273,25 +284,34 @@ static void leerCaminoCmd() {
 
 // ================= MODO AUTOMATICO =================
 void modoAutomatico() {
+  digitalWrite(Luz_Man, LOW);  // apagar luz manual en automatico
+
   leerMega();
 
-  // Leer comando de camino desde la app (puntual, no continuo)
+  // Leer comando de camino y velocidad desde la app
   if (central) {
     leerCaminoCmd();
+
+    // Leer velocidad desde app, actualizar velAuto si manda algo valido
+    uint8_t bufVel[4];
+    charVel.readValue(bufVel, 4);
+    float velRecibida;
+    memcpy(&velRecibida, bufVel, sizeof(float));
+    if (velRecibida > 0) velAuto = velRecibida;
   }
 
   updateLeds();
 
-  float valVel = 50;
+  float valVel = velAuto;
 
   if (camino == 0 || camino == 4) {
     valVel = 0;
     dirOut = 'z';
   } else {
-    int velRectoAuto = (valVel > 0) ? (int)valVel : velRecto;
-    int velGiro1Auto = (valVel > 0) ? (int)(valVel * 0.64f) : velGiro1;
-    int velGiro2Auto = (valVel > 0) ? (int)(valVel * 0.64f) : velGiro2;
-    int velGiro3Auto = (valVel > 0) ? (int)valVel : velGiro3;
+    int velRectoAuto = (int)valVel;
+    int velGiro1Auto = (int)(valVel * 0.64f);
+    int velGiro2Auto = (int)(valVel * 0.64f);
+    int velGiro3Auto = (int)valVel;
 
     dir = lecturaSensor();
     dirOut = dir;
@@ -331,6 +351,8 @@ void modoAutomatico() {
 
 // ================= MODO MANUAL BLE =================
 void modoManualBLE() {
+  digitalWrite(Luz_Man, HIGH);  // encender luz manual
+
   uint8_t bufX[4], bufY[4], bufVel[4];
   uint8_t bufDer[1], bufIzq[1];
 
@@ -380,6 +402,7 @@ void setup() {
 
   pinMode(Luz_VERDE, OUTPUT);
   pinMode(Luz_ROJO, OUTPUT);
+  pinMode(Luz_Man, OUTPUT);  // luz manual
 
   pinMode(PinSensor1, INPUT);
   pinMode(PinSensor2, INPUT);
@@ -388,12 +411,12 @@ void setup() {
   pinMode(PinSensor5, INPUT);
 
   setLeds(false, false);
+  digitalWrite(Luz_Man, LOW);
 
   // ── BLE Peripheral ──
   if (!BLE.begin()) {
     Serial.println("BLE FALLO");
-    while (1)
-      ;
+    while (1);
   }
 
   BLE.setLocalName("Mando Kuki");
@@ -408,23 +431,24 @@ void setup() {
   kukiService.addCharacteristic(charIzq);
   kukiService.addCharacteristic(charHab);
   kukiService.addCharacteristic(charSinFilo);
+  kukiService.addCharacteristic(charParada);
 
   BLE.setAdvertisedService(kukiService);
   BLE.addService(kukiService);
 
   float cero = 0.0f;
-  int ceroI = 0;
   uint8_t ceroB = 0;
+  uint8_t nadaCmd = 255;
   charX.writeValue((uint8_t *)&cero, 4);
   charY.writeValue((uint8_t *)&cero, 4);
   charVel.writeValue((uint8_t *)&cero, 4);
   charCamino.writeValue(&ceroB, 1);
-  uint8_t nadaCmd = 255;
   charCaminoCmd.writeValue(&nadaCmd, 1);
   charDer.writeValue(&ceroB, 1);
   charIzq.writeValue(&ceroB, 1);
   charHab.writeValue(&ceroB, 1);
   charSinFilo.writeValue(&ceroB, 1);
+  charParada.writeValue(&ceroB, 1);
 
   BLE.advertise();
   Serial.println("BLE anunciando como 'Mando Kuki'");
