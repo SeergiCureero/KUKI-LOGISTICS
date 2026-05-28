@@ -30,7 +30,14 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);
 const int trigPin = 26;
 const int echoPin = 27;
 bool paradaEmergencia = false;
-#define DISTANCIA_PARADA 25
+#define DISTANCIA_PARADA 50
+#define PERIODO_ULTRASONIDO 20  // medir cada 20ms
+
+// Filtro media movil
+#define NUM_MUESTRAS 5
+int muestras[NUM_MUESTRAS] = { 999, 999, 999, 999, 999 };
+uint8_t idxMuestra = 0;
+unsigned long ultimaMedicion = 0;
 
 // ================= ZONA / RFID CONTROL =================
 int zonaActual = 0;
@@ -53,10 +60,19 @@ int medirDistancia() {
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
 
-  long tiempo = pulseIn(echoPin, HIGH, 30000);
+  long tiempo = pulseIn(echoPin, HIGH, 8000);  // 8ms max (~136cm)
   if (tiempo == 0) return 999;
 
   return (int)(tiempo * 0.034 / 2);
+}
+
+int medirDistanciaFiltrada() {
+  int cruda = medirDistancia();
+  muestras[idxMuestra] = cruda;
+  idxMuestra = (idxMuestra + 1) % NUM_MUESTRAS;
+  int suma = 0;
+  for (int i = 0; i < NUM_MUESTRAS; i++) suma += muestras[i];
+  return suma / NUM_MUESTRAS;
 }
 
 // ================= UART1 LINE READER (NO BLOQUEANTE) =================
@@ -85,110 +101,174 @@ static bool readLineSerial1(String &out) {
 // ================= MOTORES =================
 void moveKUKI(char direccion, bool parada, int velPWM) {
   if (parada) {
-    velPWM = 0;
-    digitalWrite(motor1A, LOW); digitalWrite(motor1B, LOW);
-    digitalWrite(motor2A, LOW); digitalWrite(motor2B, LOW);
-    digitalWrite(motor3A, LOW); digitalWrite(motor3B, LOW);
-    digitalWrite(motor4A, LOW); digitalWrite(motor4B, LOW);
+    digitalWrite(motor1A, LOW);
+    digitalWrite(motor1B, LOW);
+    digitalWrite(motor2A, LOW);
+    digitalWrite(motor2B, LOW);
+    digitalWrite(motor3A, LOW);
+    digitalWrite(motor3B, LOW);
+    digitalWrite(motor4A, LOW);
+    digitalWrite(motor4B, LOW);
+    velPWM = 255;
   }
 
-  velPWM = constrain(velPWM, 0, 255);
+  else {
 
-  switch (direccion) {
-    case 'a':
-    case 'o':
-      digitalWrite(motor1A, HIGH); digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
-      break;
+    velPWM = constrain(velPWM, 0, 255);
 
-    case 'b':
-      digitalWrite(motor1A, LOW);  digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);  digitalWrite(motor4B, LOW);
-      break;
+    switch (direccion) {
+      case 'a':
+      case 'o':
+        digitalWrite(motor1A, HIGH);
+        digitalWrite(motor1B, LOW);
+        digitalWrite(motor2A, HIGH);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, HIGH);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, HIGH);
+        digitalWrite(motor4B, LOW);
+        break;
 
-    case 'c':
-      digitalWrite(motor1A, LOW);  digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);  digitalWrite(motor4B, HIGH);
-      break;
+      case 'b':
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, LOW);
+        digitalWrite(motor2A, HIGH);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, HIGH);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, LOW);
+        digitalWrite(motor4B, LOW);
+        break;
 
-    case 'd':
-      digitalWrite(motor1A, LOW);  digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, LOW);  digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);  digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);  digitalWrite(motor4B, HIGH);
-      break;
+      case 'c':
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, HIGH);
+        digitalWrite(motor2A, HIGH);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, HIGH);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, LOW);
+        digitalWrite(motor4B, HIGH);
+        break;
 
-    case 'e':
-      digitalWrite(motor1A, LOW); digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, LOW); digitalWrite(motor2B, HIGH);
-      digitalWrite(motor3A, LOW); digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, LOW); digitalWrite(motor4B, HIGH);
-      break;
+      case 'd':
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, HIGH);
+        digitalWrite(motor2A, LOW);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, LOW);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, LOW);
+        digitalWrite(motor4B, HIGH);
+        break;
 
-    case 'f':
-      digitalWrite(motor1A, LOW); digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW); digitalWrite(motor2B, HIGH);
-      digitalWrite(motor3A, LOW); digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, LOW); digitalWrite(motor4B, LOW);
-      break;
+      case 'e':
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, HIGH);
+        digitalWrite(motor2A, LOW);
+        digitalWrite(motor2B, HIGH);
+        digitalWrite(motor3A, LOW);
+        digitalWrite(motor3B, HIGH);
+        digitalWrite(motor4A, LOW);
+        digitalWrite(motor4B, HIGH);
+        break;
 
-    case 'g':
-      digitalWrite(motor1A, HIGH); digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);  digitalWrite(motor2B, HIGH);
-      digitalWrite(motor3A, LOW);  digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
-      break;
+      case 'f':
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, LOW);
+        digitalWrite(motor2A, LOW);
+        digitalWrite(motor2B, HIGH);
+        digitalWrite(motor3A, LOW);
+        digitalWrite(motor3B, HIGH);
+        digitalWrite(motor4A, LOW);
+        digitalWrite(motor4B, LOW);
+        break;
 
-    case 'h':
-      digitalWrite(motor1A, HIGH); digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);  digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);  digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
-      break;
+      case 'g':
+        digitalWrite(motor1A, HIGH);
+        digitalWrite(motor1B, LOW);
+        digitalWrite(motor2A, LOW);
+        digitalWrite(motor2B, HIGH);
+        digitalWrite(motor3A, LOW);
+        digitalWrite(motor3B, HIGH);
+        digitalWrite(motor4A, HIGH);
+        digitalWrite(motor4B, LOW);
+        break;
 
-    case 'i':
-      digitalWrite(motor1A, HIGH); digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);  digitalWrite(motor2B, HIGH);
-      digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);  digitalWrite(motor4B, HIGH);
-      break;
+      case 'h':
+        digitalWrite(motor1A, HIGH);
+        digitalWrite(motor1B, LOW);
+        digitalWrite(motor2A, LOW);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, LOW);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, HIGH);
+        digitalWrite(motor4B, LOW);
+        break;
 
-    case 'j':
-      digitalWrite(motor1A, LOW);  digitalWrite(motor1B, HIGH);
-      digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);  digitalWrite(motor3B, HIGH);
-      digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
-      break;
+      case 'i':
+        digitalWrite(motor1A, HIGH);
+        digitalWrite(motor1B, LOW);
+        digitalWrite(motor2A, LOW);
+        digitalWrite(motor2B, HIGH);
+        digitalWrite(motor3A, HIGH);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, LOW);
+        digitalWrite(motor4B, HIGH);
+        break;
 
-    case 'k': case 'l': case 'm': case 'n':
-      digitalWrite(motor1A, HIGH); digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW);  digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, HIGH); digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW);  digitalWrite(motor4B, LOW);
-      break;
+      case 'j':
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, HIGH);
+        digitalWrite(motor2A, HIGH);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, LOW);
+        digitalWrite(motor3B, HIGH);
+        digitalWrite(motor4A, HIGH);
+        digitalWrite(motor4B, LOW);
+        break;
 
-    case 'p': case 'q': case 'r': case 's':
-      digitalWrite(motor1A, LOW);  digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, HIGH); digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW);  digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, HIGH); digitalWrite(motor4B, LOW);
-      break;
+      case 'k':
+      case 'l':
+      case 'm':
+      case 'n':
+        digitalWrite(motor1A, HIGH);
+        digitalWrite(motor1B, LOW);
+        digitalWrite(motor2A, LOW);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, HIGH);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, LOW);
+        digitalWrite(motor4B, LOW);
+        break;
 
-    default:
-      digitalWrite(motor1A, LOW); digitalWrite(motor1B, LOW);
-      digitalWrite(motor2A, LOW); digitalWrite(motor2B, LOW);
-      digitalWrite(motor3A, LOW); digitalWrite(motor3B, LOW);
-      digitalWrite(motor4A, LOW); digitalWrite(motor4B, LOW);
-      velPWM = 0;
-      break;
+      case 'p':
+      case 'q':
+      case 'r':
+      case 's':
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, LOW);
+        digitalWrite(motor2A, HIGH);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, LOW);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, HIGH);
+        digitalWrite(motor4B, LOW);
+        break;
+
+      default:
+        digitalWrite(motor1A, LOW);
+        digitalWrite(motor1B, LOW);
+        digitalWrite(motor2A, LOW);
+        digitalWrite(motor2B, LOW);
+        digitalWrite(motor3A, LOW);
+        digitalWrite(motor3B, LOW);
+        digitalWrite(motor4A, LOW);
+        digitalWrite(motor4B, LOW);
+        velPWM = 255;
+        break;
+    }
   }
-
   analogWrite(motor1Vel, velPWM);
   analogWrite(motor2Vel, velPWM);
   analogWrite(motor3Vel, velPWM);
@@ -239,7 +319,8 @@ void RFID() {
   byte size = sizeof(buffer);
 
   if (mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A,
-                               bloque, &key, &(mfrc522.uid)) != MFRC522::STATUS_OK) {
+                               bloque, &key, &(mfrc522.uid))
+      != MFRC522::STATUS_OK) {
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
     return;
@@ -311,14 +392,18 @@ void setup() {
 
 // ================= LOOP =================
 void loop() {
+  unsigned long ahora = millis();
 
-  // 1️⃣ Calcular parada
-  paradaEmergencia = (medirDistancia() <= DISTANCIA_PARADA);
 
-  // 2️⃣ Buzzer independiente
+  if (ahora - ultimaMedicion >= PERIODO_ULTRASONIDO) {
+    ultimaMedicion = ahora;
+    paradaEmergencia = (medirDistanciaFiltrada() <= DISTANCIA_PARADA);
+  }
+
+
   digitalWrite(buzzer, paradaEmergencia ? HIGH : LOW);
 
-  // 3️⃣ Enviar estado de parada al RP2040 cuando cambia
+
   if (paradaEmergencia && !ultimaParadaEnviada) {
     Serial1.println("P1");
     ultimaParadaEnviada = true;
@@ -329,7 +414,6 @@ void loop() {
     Serial.println("TX Parada -> P0");
   }
 
-  // 4️⃣ RX desde RP2040
   String line;
   if (readLineSerial1(line)) {
     msg = line;
@@ -359,6 +443,5 @@ void loop() {
     }
   }
 
-  // 5️⃣ RFID
   RFID();
 }
