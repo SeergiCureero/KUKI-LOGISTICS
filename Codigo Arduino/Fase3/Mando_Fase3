@@ -1,3 +1,4 @@
+#define BLE_MAX_ATTR_NUM 40
 #include <ArduinoBLE.h>
 #include <Arduino_LSM6DSOX.h>
 #include <Wire.h>
@@ -7,37 +8,53 @@
 // ================= OLED =================
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
-#define OLED_RESET    -1
+#define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // ================= PINES =================
-#define PIN_D2 2
-#define PIN_D3 3
-#define PIN_D4 4
-#define PIN_D5 5  // boton parada → camino 0
+#define PIN_DER  2   // D2: giro derecha (manual) / camino 2 (auto)
+#define PIN_IZQ  3   // D3: giro izquierda (manual) / camino 3 (auto)
+#define PIN_MOD  4   // D4: toggle manual/auto
+#define PIN_STOP 5   // D5: parada → camino 0
 
-// ================= ACELERÓMETRO =================
-float Ax, Ay, Az;
+// ================= UUIDs BLE =================
+#define UUID_SVC  "19b10000-e8f2-537e-4f6c-d104768a1214"
+#define UUID_X    "19b10001-e8f2-537e-4f6c-d104768a1214"
+#define UUID_Y    "19b10002-e8f2-537e-4f6c-d104768a1214"
+#define UUID_VEL  "19b10003-e8f2-537e-4f6c-d104768a1214"
+#define UUID_CAM  "19b10004-e8f2-537e-4f6c-d104768a1214"
+#define UUID_CAMC "19b10009-e8f2-537e-4f6c-d104768a1214"
+#define UUID_DER  "19b10005-e8f2-537e-4f6c-d104768a1214"
+#define UUID_IZQ  "19b10006-e8f2-537e-4f6c-d104768a1214"
+#define UUID_HAB  "19b10007-e8f2-537e-4f6c-d104768a1214"
+#define UUID_FILO "19b10008-e8f2-537e-4f6c-d104768a1214"
+#define UUID_PAR  "19b1000a-e8f2-537e-4f6c-d104768a1214"
 
 // ================= ESTADO =================
-bool habManual  = false;
-int  caminoSel  = 0;
-bool sinFilo    = false;
-bool paradaEmg  = false;
+bool  habManual = false;
+int   caminoSel = 0;
+bool  sinFilo   = false;
+bool  paradaEmg = false;
+float potVel    = 0.0f;
+float Ax = 0, Ay = 0, Az = 0;
 
-bool ultimoD2 = HIGH;
-bool ultimoD3 = HIGH;
-bool ultimoD4 = HIGH;
-bool ultimoD5 = HIGH;
+bool prevD2 = HIGH;
+bool prevD3 = HIGH;
+bool prevD4 = HIGH;
+bool prevD5 = HIGH;
 
 // ================= PANTALLAS =================
-void mostrarBuscando() {
-  display.clearDisplay();
+static void _header() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
   display.println("  == KUKI MANDO ==");
   display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+}
+
+void mostrarBuscando() {
+  display.clearDisplay();
+  _header();
   display.setCursor(0, 18);
   display.println("Buscando AGV...");
   display.setCursor(0, 30);
@@ -47,51 +64,9 @@ void mostrarBuscando() {
   display.display();
 }
 
-void mostrarConectado(int camino, bool manual, float vel, bool der, bool izq) {
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-
-  display.setCursor(0, 0);
-  display.println("  == KUKI MANDO ==");
-  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
-
-  display.setCursor(0, 14);
-  display.print("Modo: ");
-  display.setTextSize(2);
-  display.setCursor(40, 12);
-  display.println(manual ? "MANUAL" : "AUTO");
-  display.setTextSize(1);
-
-  display.setCursor(0, 32);
-  display.print("Camino: ");
-  if      (camino == 0) display.println("--");
-  else if (camino == 2) display.println("CORTO (2)");
-  else if (camino == 3) display.println("LARGO (3)");
-
-  display.setCursor(0, 43);
-  display.print("Vel: ");
-  display.print((int)vel);
-  display.println("/255");
-
-  if (manual) {
-    display.setCursor(0, 54);
-    display.print("Giro: ");
-    if      (der) display.println("DERECHA >>>");
-    else if (izq) display.println("<<< IZQUIERDA");
-    else          display.println("---");
-  }
-
-  display.display();
-}
-
 void mostrarDesconectado() {
   display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-  display.println("  == KUKI MANDO ==");
-  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+  _header();
   display.setCursor(0, 20);
   display.println("AGV desconectado");
   display.setCursor(0, 35);
@@ -101,11 +76,7 @@ void mostrarDesconectado() {
 
 void mostrarParada() {
   display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-  display.println("  == KUKI MANDO ==");
-  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+  _header();
   display.setTextSize(2);
   display.setCursor(10, 18);
   display.println("! PARADA !");
@@ -119,11 +90,7 @@ void mostrarParada() {
 
 void mostrarSinFilo() {
   display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-  display.println("  == KUKI MANDO ==");
-  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+  _header();
   display.setTextSize(2);
   display.setCursor(16, 18);
   display.println("SIN FILO");
@@ -135,34 +102,267 @@ void mostrarSinFilo() {
   display.display();
 }
 
+void mostrarDestinoAlcanzado() {
+  display.clearDisplay();
+  _header();
+  display.setTextSize(2);
+  display.setCursor(4, 18);
+  display.println("DESTINO");
+  display.setCursor(4, 36);
+  display.println("ALCANZADO");
+  display.setTextSize(1);
+  display.setCursor(20, 56);
+  display.println("Pulsa D2 o D3");
+  display.display();
+}
+
+void mostrarEnCamino(int camino) {
+  display.clearDisplay();
+  _header();
+  display.setTextSize(1);
+  display.setCursor(0, 14);
+  display.print("Camino: ");
+  display.setTextSize(2);
+  display.setCursor(0, 24);
+  if (camino == 2) display.println("CORTO (2)");
+  else             display.println("LARGO (3)");
+  display.setTextSize(1);
+  display.setCursor(0, 48);
+  display.print("Vel: ");
+  display.print((int)potVel);
+  display.println("/255");
+  display.display();
+}
+
+void mostrarManual(bool der, bool izq) {
+  display.clearDisplay();
+  _header();
+  display.setTextSize(2);
+  display.setCursor(16, 14);
+  display.println("MANUAL");
+  display.setTextSize(1);
+  display.setCursor(0, 36);
+  display.print("Vel: ");
+  display.print((int)potVel);
+  display.println("/255");
+  display.setCursor(0, 48);
+  display.print("Giro: ");
+  if      (der) display.println("DERECHA >>>");
+  else if (izq) display.println("<<< IZQUIERDA");
+  else          display.println("---");
+  display.display();
+}
+
+void mostrarAutoEspera() {
+  display.clearDisplay();
+  _header();
+  display.setTextSize(2);
+  display.setCursor(4, 18);
+  display.println("EN ESPERA");
+  display.setTextSize(1);
+  display.setCursor(10, 44);
+  display.println("Pulsa D2 (corto)");
+  display.setCursor(10, 54);
+  display.println("o D3 (largo)");
+  display.display();
+}
+
+void actualizarPantalla(bool der, bool izq) {
+  if (paradaEmg) {
+    mostrarParada();
+  } else if (sinFilo && !habManual) {
+    mostrarSinFilo();
+  } else if (habManual) {
+    mostrarManual(der, izq);
+  } else {
+    switch (caminoSel) {
+      case 0:  mostrarAutoEspera();        break;
+      case 1:  mostrarDestinoAlcanzado();  break;
+      case 2:
+      case 3:  mostrarEnCamino(caminoSel); break;
+      default: mostrarAutoEspera();        break;
+    }
+  }
+}
+
+// ================= BOTONES =================
+void leerBotones(BLECharacteristic &charCaminoCmd) {
+  bool d2 = digitalRead(PIN_DER);
+  bool d3 = digitalRead(PIN_IZQ);
+  bool d4 = digitalRead(PIN_MOD);
+  bool d5 = digitalRead(PIN_STOP);
+
+  // Toggle manual/auto
+  if (d4 == LOW && prevD4 == HIGH) {
+    habManual = !habManual;
+    Serial.print("[BTN] Manual: ");
+    Serial.println(habManual ? "ON" : "OFF");
+  }
+
+  if (!habManual) {
+    if (d2 == LOW && prevD2 == HIGH) {
+      uint8_t cmd = 2;
+      charCaminoCmd.writeValue(&cmd, 1);
+      Serial.println("[BTN] Camino 2");
+    }
+    if (d3 == LOW && prevD3 == HIGH) {
+      uint8_t cmd = 3;
+      charCaminoCmd.writeValue(&cmd, 1);
+      Serial.println("[BTN] Camino 3");
+    }
+  }
+
+  // Parada siempre disponible
+  if (d5 == LOW && prevD5 == HIGH) {
+    uint8_t cmd = 0;
+    charCaminoCmd.writeValue(&cmd, 1);
+    Serial.println("[BTN] Parada -> camino 0");
+  }
+
+  prevD2 = d2;
+  prevD3 = d3;
+  prevD4 = d4;
+  prevD5 = d5;
+}
+
+// ================= ENVIAR =================
+void enviar(BLECharacteristic &charX,   BLECharacteristic &charY,
+            BLECharacteristic &charVel, BLECharacteristic &charDer,
+            BLECharacteristic &charIzq, BLECharacteristic &charHab) {
+
+  float valX = 0.0f, valY = 0.0f;
+  if (IMU.accelerationAvailable()) {
+    IMU.readAcceleration(Ax, Ay, Az);
+    if (habManual) { valX = Ax; valY = Ay; }
+  }
+
+  charX.writeValue((uint8_t*)&valX, 4);
+  charY.writeValue((uint8_t*)&valY, 4);
+  charVel.writeValue((uint8_t*)&potVel, 4);
+
+  uint8_t der = (habManual && digitalRead(PIN_DER)  == LOW) ? 1 : 0;
+  uint8_t izq = (habManual && digitalRead(PIN_IZQ)  == LOW) ? 1 : 0;
+  uint8_t hab = habManual ? 1 : 0;
+
+  charDer.writeValue(&der, 1);
+  charIzq.writeValue(&izq, 1);
+  charHab.writeValue(&hab, 1);
+}
+
+// ================= CONTROLAR =================
+void controlar(BLEDevice peripheral) {
+  if (!peripheral.connect()) {
+    Serial.println("[BLE] Fallo al conectar");
+    return;
+  }
+  Serial.println("[BLE] Conectado al KUKI AGV");
+  delay(500);
+
+  if (!peripheral.discoverAttributes()) {
+    Serial.println("[BLE] Fallo descubriendo atributos");
+    peripheral.disconnect();
+    return;
+  }
+  Serial.println("[BLE] Atributos descubiertos OK");
+
+  BLECharacteristic charX    = peripheral.characteristic(UUID_X);
+  BLECharacteristic charY    = peripheral.characteristic(UUID_Y);
+  BLECharacteristic charVel  = peripheral.characteristic(UUID_VEL);
+  BLECharacteristic charCam  = peripheral.characteristic(UUID_CAM);
+  BLECharacteristic charCamC = peripheral.characteristic(UUID_CAMC);
+  BLECharacteristic charDer  = peripheral.characteristic(UUID_DER);
+  BLECharacteristic charIzq  = peripheral.characteristic(UUID_IZQ);
+  BLECharacteristic charHab  = peripheral.characteristic(UUID_HAB);
+  BLECharacteristic charFilo = peripheral.characteristic(UUID_FILO);
+  BLECharacteristic charPar  = peripheral.characteristic(UUID_PAR);
+
+  if (!charX   || !charY    || !charVel  || !charCam ||
+      !charCamC || !charDer || !charIzq  || !charHab ||
+      !charFilo || !charPar) {
+    Serial.println("[BLE] Faltan caracteristicas");
+    peripheral.disconnect();
+    return;
+  }
+  Serial.println("[BLE] Todas las caracteristicas OK");
+
+  charCam.subscribe();
+  charFilo.subscribe();
+  charPar.subscribe();
+
+  while (peripheral.connected()) {
+    // Leer pot una sola vez por ciclo
+    potVel = ((float)analogRead(A1) / 1023.0f) * 255.0f;
+
+    leerBotones(charCamC);
+
+    // Notificaciones del AGV
+    if (charFilo.valueUpdated()) {
+      uint8_t val = 0;
+      charFilo.readValue(&val, 1);
+      sinFilo = (val == 1);
+      Serial.print("[AGV] SinFilo: "); Serial.println(sinFilo);
+    }
+    if (charPar.valueUpdated()) {
+      uint8_t val = 0;
+      charPar.readValue(&val, 1);
+      paradaEmg = (val == 1);
+      Serial.print("[AGV] Parada: "); Serial.println(paradaEmg);
+    }
+    if (charCam.valueUpdated()) {
+      uint8_t val = 0;
+      charCam.readValue(&val, 1);
+      caminoSel = val;
+      Serial.print("[AGV] Camino: "); Serial.println(caminoSel);
+    }
+
+    bool der = (habManual && digitalRead(PIN_DER) == LOW);
+    bool izq = (habManual && digitalRead(PIN_IZQ) == LOW);
+
+    enviar(charX, charY, charVel, charDer, charIzq, charHab);
+    actualizarPantalla(der, izq);
+
+    delay(100);
+  }
+
+  Serial.println("[BLE] Desconectado del KUKI AGV");
+}
+
 // ================= SETUP =================
 void setup() {
   Serial.begin(9600);
+  while (!Serial && millis() < 3000);  // esperar monitor serie max 3s
+  Serial.println("[SYS] Iniciando mando KUKI...");
 
-  pinMode(PIN_D2, INPUT_PULLUP);
-  pinMode(PIN_D3, INPUT_PULLUP);
-  pinMode(PIN_D4, INPUT_PULLUP);
-  pinMode(PIN_D5, INPUT_PULLUP);
+  pinMode(PIN_DER,  INPUT_PULLUP);
+  pinMode(PIN_IZQ,  INPUT_PULLUP);
+  pinMode(PIN_MOD,  INPUT_PULLUP);
+  pinMode(PIN_STOP, INPUT_PULLUP);
+
+  Wire.begin();
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println("OLED FALLO");
+    Serial.println("[ERR] OLED FALLO");
     while (1);
   }
+  Serial.println("[SYS] OLED OK");
   display.clearDisplay();
   display.display();
 
   if (!BLE.begin()) {
-    Serial.println("BLE FALLO");
+    Serial.println("[ERR] BLE FALLO");
     while (1);
   }
+  Serial.println("[SYS] BLE OK");
+
   if (!IMU.begin()) {
-    Serial.println("IMU FALLO");
+    Serial.println("[ERR] IMU FALLO");
     while (1);
   }
+  Serial.println("[SYS] IMU OK");
 
   mostrarBuscando();
-  Serial.println("Mando KUKI listo, buscando KUKI AGV...");
-  BLE.scanForUuid("19B10000-E8F2-537E-4F6C-D104768A1214");
+  Serial.println("[SYS] Buscando KUKI AGV...");
+  BLE.scanForUuid(UUID_SVC);
 }
 
 // ================= LOOP =================
@@ -170,166 +370,15 @@ void loop() {
   BLEDevice peripheral = BLE.available();
 
   if (peripheral) {
-    Serial.print("Encontrado: ");
-    Serial.println(peripheral.localName());
+    Serial.print("[BLE] Encontrado: '");
+    Serial.print(peripheral.localName());
+    Serial.println("'");
 
     if (peripheral.localName().indexOf("Mando Kuki") >= 0) {
       BLE.stopScan();
       controlar(peripheral);
       mostrarDesconectado();
-      BLE.scanForUuid("19B10000-E8F2-537E-4F6C-D104768A1214");
+      BLE.scanForUuid(UUID_SVC);
     }
   }
-}
-
-// ================= CONTROLAR =================
-void controlar(BLEDevice peripheral) {
-  if (!peripheral.connect()) {
-    Serial.println("Fallo al conectar");
-    return;
-  }
-  Serial.println("Conectado al KUKI AGV");
-
-  if (!peripheral.discoverAttributes()) {
-    Serial.println("Fallo descubriendo atributos");
-    peripheral.disconnect();
-    return;
-  }
-
-  BLECharacteristic charX        = peripheral.characteristic("19b10001-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic charY        = peripheral.characteristic("19b10002-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic charVel      = peripheral.characteristic("19b10003-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic charCamino   = peripheral.characteristic("19b10004-e8f2-537e-4f6c-d104768a1214");  // solo lectura/notify
-  BLECharacteristic charCaminoCmd= peripheral.characteristic("19b10009-e8f2-537e-4f6c-d104768a1214");  // escritura camino
-  BLECharacteristic charDer      = peripheral.characteristic("19b10005-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic charIzq      = peripheral.characteristic("19b10006-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic charHab      = peripheral.characteristic("19b10007-e8f2-537e-4f6c-d104768a1214");
-  BLECharacteristic charSinFiloC = peripheral.characteristic("19b10008-e8f2-537e-4f6c-d104768a1214");  // notify sin filo
-  BLECharacteristic charParadaC  = peripheral.characteristic("19b1000a-e8f2-537e-4f6c-d104768a1214");  // notify parada
-
-  if (!charX || !charY || !charVel || !charCamino || !charCaminoCmd ||
-      !charDer || !charIzq || !charHab || !charSinFiloC || !charParadaC) {
-    Serial.println("Faltan caracteristicas");
-    peripheral.disconnect();
-    return;
-  }
-
-  // Suscribirse a notificaciones
-  charCamino.subscribe();
-  charSinFiloC.subscribe();
-  charParadaC.subscribe();
-
-  while (peripheral.connected()) {
-    leerBotones(charCaminoCmd);
-
-    // Leer notificaciones del RP2040
-    if (charSinFiloC.valueUpdated()) {
-      uint8_t val = 0;
-      charSinFiloC.readValue(&val, 1);
-      sinFilo = (val == 1);
-      Serial.print("SinFilo: "); Serial.println(sinFilo);
-    }
-    if (charParadaC.valueUpdated()) {
-      uint8_t val = 0;
-      charParadaC.readValue(&val, 1);
-      paradaEmg = (val == 1);
-      Serial.print("Parada: "); Serial.println(paradaEmg);
-    }
-    if (charCamino.valueUpdated()) {
-      uint8_t val = 0;
-      charCamino.readValue(&val, 1);
-      caminoSel = val;
-      Serial.print("Camino actualizado: "); Serial.println(caminoSel);
-    }
-
-    int   lectPot = analogRead(A1);
-    float potVel  = ((float)lectPot / 1023.0f) * 255.0f;
-    bool  der     = (habManual && digitalRead(PIN_D2) == LOW);
-    bool  izq     = (habManual && digitalRead(PIN_D3) == LOW);
-
-    enviar(charX, charY, charVel, charDer, charIzq, charHab);
-
-    // Pantalla: parada tiene prioridad sobre sin filo
-    if (paradaEmg)       mostrarParada();
-    else if (sinFilo)    mostrarSinFilo();
-    else                 mostrarConectado(caminoSel, habManual, potVel, der, izq);
-
-    delay(100);
-  }
-
-  Serial.println("Desconectado del KUKI AGV");
-}
-
-// ================= BOTONES =================
-void leerBotones(BLECharacteristic &charCaminoCmd) {
-  bool d2 = digitalRead(PIN_D2);
-  bool d3 = digitalRead(PIN_D3);
-  bool d4 = digitalRead(PIN_D4);
-  bool d5 = digitalRead(PIN_D5);
-
-  // D4: toggle manual/auto
-  if (d4 == LOW && ultimoD4 == HIGH) {
-    habManual = !habManual;
-    Serial.print("Manual: ");
-    Serial.println(habManual ? "ON" : "OFF");
-  }
-
-  if (!habManual) {
-    // D2: camino 2 (corto)
-    if (d2 == LOW && ultimoD2 == HIGH) {
-      uint8_t cmd = 2;
-      charCaminoCmd.writeValue(&cmd, 1);
-      Serial.println("Camino cmd: 2");
-    }
-    // D3: camino 3 (largo)
-    if (d3 == LOW && ultimoD3 == HIGH) {
-      uint8_t cmd = 3;
-      charCaminoCmd.writeValue(&cmd, 1);
-      Serial.println("Camino cmd: 3");
-    }
-  }
-
-  // D5: parada → camino 0
-  if (d5 == LOW && ultimoD5 == HIGH) {
-    uint8_t cmd = 0;
-    charCaminoCmd.writeValue(&cmd, 1);
-    Serial.println("Camino cmd: 0 (PARADA)");
-  }
-
-  ultimoD2 = d2;
-  ultimoD3 = d3;
-  ultimoD4 = d4;
-  ultimoD5 = d5;
-}
-
-// ================= ENVIAR =================
-void enviar(BLECharacteristic &charX, BLECharacteristic &charY,
-            BLECharacteristic &charVel,
-            BLECharacteristic &charDer, BLECharacteristic &charIzq,
-            BLECharacteristic &charHab) {
-
-  float valX = 0.0f, valY = 0.0f;
-  if (IMU.accelerationAvailable()) {
-    IMU.readAcceleration(Ax, Ay, Az);
-    if (habManual) { valX = Ax; valY = Ay; }
-  }
-  charX.writeValue((uint8_t*)&valX, 4);
-  charY.writeValue((uint8_t*)&valY, 4);
-
-  int lectPot = analogRead(A1);
-  float potVel = ((float)lectPot / 1023.0f) * 255.0f;
-  charVel.writeValue((uint8_t*)&potVel, 4);
-
-  uint8_t der = (habManual && digitalRead(PIN_D2) == LOW) ? 1 : 0;
-  uint8_t izq = (habManual && digitalRead(PIN_D3) == LOW) ? 1 : 0;
-  charDer.writeValue(&der, 1);
-  charIzq.writeValue(&izq, 1);
-
-  uint8_t hab = habManual ? 1 : 0;
-  charHab.writeValue(&hab, 1);
-
-  Serial.print("Camino:"); Serial.print(caminoSel);
-  Serial.print(" Hab:");   Serial.print(habManual);
-  Serial.print(" Der:");   Serial.print(der);
-  Serial.print(" Izq:");   Serial.println(izq);
 }
